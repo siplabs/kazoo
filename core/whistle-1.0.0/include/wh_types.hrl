@@ -158,5 +158,8 @@
 -type xml_text() :: #xmlText{value :: iolist()}.
 -type xml_texts() :: [xml_text(),...] | [].
 
+-type xml_thing() :: xml_el() | xml_text().
+-type xml_things() :: xml_els() | xml_texts().
+
 -define(WHISTLE_TYPES_INCLUDED, 'true').
 -endif.
