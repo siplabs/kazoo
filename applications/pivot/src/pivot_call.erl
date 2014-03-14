@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%%% @copyright (C) 2012-2013, 2600Hz INC
+%%% @copyright (C) 2012-2014, 2600Hz INC
 %%% @doc
 %%% Handle processing of the pivot call
 %%% @end
@@ -63,6 +63,7 @@
 %% @spec start_link() -> {'ok', Pid} | ignore | {'error', Error}
 %% @end
 %%--------------------------------------------------------------------
+-spec start_link(whapps_call:call(), wh_json:object()) -> startlink_ret().
 start_link(Call, JObj) ->
     CallId = whapps_call:call_id(Call),
 
@@ -132,6 +133,7 @@ relay_cdr_event(JObj, Props) ->
 %%                     {'stop', Reason}
 %% @end
 %%--------------------------------------------------------------------
+-spec init([whapps_call:call() | wh_json:object()]) -> {'ok', state(), 'hibernate'}.
 init([Call, JObj]) ->
     put('callid', whapps_call:call_id(Call)),
 
@@ -165,6 +167,7 @@ init([Call, JObj]) ->
 %%                                   {'stop', Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+-spec handle_call(term(), pid_ref(), state()) -> {'reply', 'ok', state()}.
 handle_call(_Request, _From, State) ->
     {'reply', 'ok', State}.
 
@@ -178,6 +181,8 @@ handle_call(_Request, _From, State) ->
 %%                                  {'stop', Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+-spec handle_cast(term(), state()) -> {'noreply', state()} |
+                                      {'stop', 'normal', state()}.
 handle_cast('usurp', State) ->
     lager:debug("terminating pivot call because of usurp"),
     {'stop', 'normal', State#state{call='undefined'}};
@@ -242,10 +247,11 @@ handle_cast(_Req, State) ->
 %%                                   {'stop', Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+-spec handle_info(term(), state()) -> {'noreply', state()} |
+                                      {'noreply', state(), 'hibernate'}.
 handle_info({'ibrowse_async_headers', ReqId, "200", RespHeaders}
             ,#state{request_id=ReqId}=State) ->
     {'noreply', State#state{response_content_type=find_content_type(RespHeaders)}};
-
 handle_info({'ibrowse_async_headers', ReqId, "302", RespHeaders}
             ,#state{voice_uri=Uri
                     ,method=Method
@@ -300,13 +306,11 @@ handle_info({'ibrowse_async_response_end', ReqId}, #state{request_id=ReqId
                             ,response_ref = Ref
                            }
      ,'hibernate'};
-
 handle_info({'DOWN', Ref, 'process', Pid, Reason}, #state{response_pid=Pid
                                                           ,response_ref=Ref
                                                          }=State) ->
     lager:debug("response pid ~p(~p) down: ~p", [Pid, Ref, Reason]),
     {'noreply', State#state{response_pid='undefined'}, 'hibernate'};
-
 handle_info(_Info, State) ->
     lager:debug("unhandled message: ~p", [_Info]),
     {'noreply', State}.
@@ -339,6 +343,7 @@ handle_event(_JObj, #state{response_pid=Pid
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
+-spec terminate(term(), state()) -> 'ok'.
 terminate(_Reason, #state{call=Call}) ->
     _ = whapps_call_command:hangup(Call),
     lager:info("pivot call terminating: ~p", [_Reason]).
@@ -351,6 +356,7 @@ terminate(_Reason, #state{call=Call}) ->
 %% @spec code_change(OldVsn, State, Extra) -> {'ok', NewState}
 %% @end
 %%--------------------------------------------------------------------
+-spec code_change(term(), state(), term()) -> {'ok', state()}.
 code_change(_OldVsn, State, _Extra) ->
     {'ok', State}.
 
