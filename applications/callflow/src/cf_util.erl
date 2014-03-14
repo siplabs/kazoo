@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%%% @copyright (C) 2011-2013, 2600Hz
+%%% @copyright (C) 2011-2014, 2600Hz
 %%% @doc
 %%%
 %%% @end
@@ -21,7 +21,9 @@
 
 -define(ENCRYPTION_MAP, [{<<"srtp">>, [{<<"RTP-Secure-Media">>, <<"true">>}]}
                         ,{<<"zrtp">>, [{<<"ZRTP-Secure-Media">>, <<"true">>}
-                                      ,{<<"ZRTP-Enrollment">>, <<"true">>}]}]).
+                                       ,{<<"ZRTP-Enrollment">>, <<"true">>}
+                                      ]}
+                        ]).
 
 -export([presence_probe/2]).
 -export([presence_mwi_query/2]).
@@ -745,7 +747,7 @@ maybe_apply_dialplan([Regex|Regexs], DialPlan, Number) ->
     case re:run(Number, Regex, [{'capture', 'all', 'binary'}]) of
         'nomatch' ->
             maybe_apply_dialplan(Regexs, DialPlan, Number);
-        'match' -> 
+        'match' ->
             Number;
         {'match', Captures} ->
             Root = lists:last(Captures),
