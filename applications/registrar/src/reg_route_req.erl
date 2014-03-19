@@ -19,8 +19,22 @@ handle_route_req(JObj, _Props) ->
     'true' = wapi_route:req_v(JObj),
     CCVs = wh_json:get_value(<<"Custom-Channel-Vars">>, JObj, wh_json:new()),
     case wh_json:get_ne_value(<<"Account-ID">>, CCVs) of
-        'undefined' ->  maybe_replay_route_req(JObj);
+        'undefined' ->  maybe_lookup_user(JObj);
         _AccountId -> 'ok'
+    end.
+
+maybe_lookup_user(JObj) ->
+    Realm = wh_json:get_value(<<"SIP-Request-Host">>, JObj),
+    lager:info("registrar rou_req ~p",[Realm]),
+    lager:info("registrar rou_req ~p",[wh_json:get_value(<<"From">>, JObj)]),
+    [Username, _] = binary:split(wh_json:get_lower_binary(<<"From">>, JObj), <<"@">>),
+    ViewOptions = [{'key', [Realm, Username]}],
+    lager:info("lookup result1:~p ~p ~p", [Realm, Username, ViewOptions]),
+    case couch_mgr:get_results(?WH_SIP_DB, <<"credentials/lookup">>, ViewOptions) of
+      {'ok', [Doc|_]} -> replay_route_req(JObj, Doc);
+      _Else ->
+          lager:info("lookup result2:~p ~p ~p", [Realm, Username, _Else]),
+          maybe_replay_route_req(JObj)
     end.
 
 -spec maybe_replay_route_req(wh_json:object()) -> any().
@@ -54,5 +68,5 @@ replay_route_req(JObj, Doc) ->
                 ,{<<"Authorizing-Type">>, AuthType}
                ])
              ,wh_json:get_value(<<"Custom-Channel-Vars">>, JObj, wh_json:new())),
-    lager:debug("replaying route_req"),
+    lager:info("replaying route_req ~p",[CCVs]),
     wapi_route:publish_req(wh_json:set_value(<<"Custom-Channel-Vars">>, CCVs, JObj)).

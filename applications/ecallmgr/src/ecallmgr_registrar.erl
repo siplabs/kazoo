@@ -574,9 +574,19 @@ resp_to_query(JObj) ->
 registration_id(Username, Realm) ->
     {wh_util:to_lower_binary(Username), wh_util:to_lower_binary(Realm)}.
 
+-spec get_auth_user(wh_json:object()) -> ne_binary().
+get_auth_user(JObj) ->
+    case wh_json:get_value(<<"Username">>, JObj) of
+        <<"unknown">> -> wh_json:get_value(<<"From-User">>, JObj, <<"nouser">>);
+        Username -> Username
+    end.
+    
+
 -spec create_registration(wh_json:object()) -> registration().
 create_registration(JObj) ->
-    Username = wh_json:get_value(<<"Username">>, JObj),
+    lager:info("create_registration ~p",[JObj]),
+%    Username = wh_json:get_value(<<"Username">>, JObj),
+    Username = get_auth_user(JObj),
     Realm = wh_json:get_value(<<"Realm">>, JObj),
     Reg = existing_or_new_registration(Username, Realm),
     Reg#registration{username=Username
@@ -708,20 +718,21 @@ query_authn(#registration{username=Username
     case ReqResp of
         {'error', _} -> Reg;
         {'ok', JObj} ->
-            lager:debug("received authn information"),
+            lager:info("received authn information ~p",[JObj]),
             CCVs = wh_json:get_value(<<"Custom-Channel-Vars">>, JObj, wh_json:new()),
             AccountId = wh_json:get_value(<<"Account-ID">>, CCVs),
             AccountDb = wh_util:format_account_id(AccountId, 'encoded'),
             AuthorizingId = wh_json:get_value(<<"Authorizing-ID">>, CCVs),
+            NewUsername = wh_json:get_value(<<"Username">>, CCVs),
             CacheProps = [{'origin', [{'db', AccountDb, AuthorizingId}
                                       ,{'db', AccountDb, AccountId}
                                      ]}
                          ],
-            wh_cache:store_local(?ECALLMGR_AUTH_CACHE
-                                 ,?CREDS_KEY(Realm, Username)
-                                 ,JObj
-                                 ,CacheProps),
-            Reg#registration{account_id = AccountId
+%            wh_cache:store_local(?ECALLMGR_AUTH_CACHE
+%                                 ,?CREDS_KEY(Realm, Username)
+%                                 ,JObj
+%                                 ,CacheProps),
+            Reg#registration{username = NewUsername, account_id = AccountId
                              ,account_db = AccountDb
                              ,authorizing_id = AuthorizingId
                              ,authorizing_type = wh_json:get_value(<<"Authorizing-Type">>, CCVs)

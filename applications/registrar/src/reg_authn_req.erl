@@ -18,7 +18,8 @@ init() -> 'ok'.
 handle_req(JObj, _Props) ->
     'true' = wapi_authn:req_v(JObj),
     _ = wh_util:put_callid(JObj),
-    Username = wapi_authn:get_auth_user(JObj),
+    lager:info("registrar ~p",[JObj]),
+    Username = get_auth_user(JObj),
     Realm = wapi_authn:get_auth_realm(JObj),
     lager:debug("trying to authenticate ~s@~s", [Username, Realm]),
     case lookup_auth_user(Username, Realm) of
@@ -29,6 +30,18 @@ handle_req(JObj, _Props) ->
                          ,[Username, Realm, _R]),
             send_auth_error(JObj)
     end.
+
+
+-spec get_auth_user(wh_json:object()) -> ne_binary().
+get_auth_user(JObj) ->
+    case wapi_authn:get_auth_user(JObj) of
+        <<"unknown">> ->
+            To = wh_json:get_value(<<"To">>, JObj,<<"nouser@nodomain">>),
+            [ToUser, _ToDomain] = binary:split(To, <<"@">>),
+            wh_util:to_lower_binary(ToUser);
+        Username -> Username    
+    end.
+
 
 -spec maybe_add_account_name(auth_user(), wh_json:object()) -> 'ok'.
 maybe_add_account_name(#auth_user{account_name='undefined'
@@ -73,7 +86,7 @@ send_auth_resp(#auth_user{password=Password
               ,{<<"Custom-Channel-Vars">>, create_ccvs(AuthUser)}
               | wh_api:default_headers(Category, <<"authn_resp">>, ?APP_NAME, ?APP_VERSION)
              ]),
-    lager:debug("sending SIP authentication reply, with credentials"),
+    lager:info("sending SIP authentication reply, with credentials ~p",[Resp]),
     wapi_authn:publish_resp(wh_json:get_value(<<"Server-ID">>, JObj), Resp).
 
 -spec send_auth_error(wh_json:object()) -> 'ok'.
