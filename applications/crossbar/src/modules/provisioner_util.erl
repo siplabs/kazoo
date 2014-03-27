@@ -21,8 +21,8 @@
 -export([maybe_send_contact_list/1]).
 -export([get_provision_defaults/1]).
 
-
 -define(MOD_CONFIG_CAT, <<(?CONFIG_CAT)/binary, ".devices">>).
+-define(PROVISIONER_CONFIG, <<"provisioner">>).
 -define(TEMPLATE_ATTCH, <<"template">>).
 
 %%--------------------------------------------------------------------
@@ -77,15 +77,13 @@ get_old_mac_address(Context) ->
 -spec maybe_provision(cb_context:context(), crossbar_status()) -> boolean().
 maybe_provision(Context) ->
     maybe_provision(Context, cb_context:resp_status(Context)).
-maybe_provision(#cb_context{doc=JObj, auth_token=AuthToken}=Context, 'success') ->
+maybe_provision(Context, 'success') ->
     MACAddress = get_mac_address(Context),
-    case MACAddress =/= 'undefined'
-        andalso whapps_config:get_binary(?MOD_CONFIG_CAT, <<"provisioning_type">>)
-    of
+    case MACAddress =/= 'undefined' andalso get_provisioning_type() of
         <<"super_awesome_provisioner">> ->
             _ = spawn(fun() ->
-                              do_full_provisioner_provider(MACAddress, Context),
-                              do_full_provision(MACAddress, Context)
+                        do_full_provisioner_provider(MACAddress, Context),
+                        do_full_provision(MACAddress, Context)
                       end),
             'true';
         <<"awesome_provisioner">> ->
@@ -95,11 +93,32 @@ maybe_provision(#cb_context{doc=JObj, auth_token=AuthToken}=Context, 'success') 
             _ = spawn(fun() -> do_simple_provision(MACAddress, Context) end),
             'true';
         <<"provisioner_v5">>  ->
-            _ = spawn(fun() -> provisioner_v5:do(JObj, AuthToken) end),
-            'true';
+            maybe_provision_v5(Context, cb_context:req_verb(Context)),
+            true;
         _ -> 'false'
     end;
 maybe_provision(_Context, _Status) -> 'false'.
+
+-spec maybe_provision_v5(cb_context:context(), ne_binary()) -> 'ok'.
+maybe_provision_v5(Context, ?HTTP_PUT) ->
+    JObj = cb_context:doc(Context),
+    AuthToken =  cb_context:auth_token(Context),
+    _ = spawn('provisioner_v5', 'put', [JObj, AuthToken]),
+    'ok';
+maybe_provision_v5(Context, ?HTTP_POST) ->
+    JObj = cb_context:doc(Context),
+    AuthToken =  cb_context:auth_token(Context),
+    NewAddress = cb_context:req_value(Context, <<"mac_address">>),
+    OldAddress = wh_json:get_ne_value(<<"mac_address">>, cb_context:fetch(Context, 'db_doc')),
+    case NewAddress =:= OldAddress of
+        'true' ->
+            _ = spawn('provisioner_v5', 'post', [JObj, AuthToken]);
+        'false' ->
+            JObj1 = wh_json:set_value(<<"mac_address">>, OldAddress, JObj),
+            _ = spawn('provisioner_v5', 'delete', [JObj1, AuthToken]),
+            _ = spawn('provisioner_v5', 'put', [JObj, AuthToken])
+    end,
+    'ok'.
 
 %%--------------------------------------------------------------------
 %% @public
@@ -113,16 +132,14 @@ maybe_delete_provision(Context) ->
     maybe_delete_provision(Context, cb_context:resp_status(Context)).
 maybe_delete_provision(#cb_context{doc=JObj, auth_token=AuthToken}=Context, 'success') ->
     MACAddress = get_mac_address(Context),
-    case MACAddress =/= 'undefined'
-        andalso whapps_config:get_binary(?MOD_CONFIG_CAT, <<"provisioning_type">>)
-    of
+    case MACAddress =/= 'undefined' andalso get_provisioning_type() of
         <<"super_awesome_provisioner">> ->
             _ = spawn(fun() ->
                               delete_full_provision(MACAddress, Context)
                       end),
             'true';
         <<"provisioner_v5">>  ->
-            _ = spawn(fun() -> provisioner_v5:undo(JObj, AuthToken) end),
+            _ = spawn(fun() -> provisioner_v5:delete(JObj, AuthToken) end),
             'true';
         _ -> 'false'
     end;
@@ -138,12 +155,10 @@ maybe_delete_provision(_Context, _Status) -> 'false'.
 maybe_update_account(#cb_context{account_id=AccountId
                                  ,auth_token=AuthToken
                                  ,doc=Doc}=Context) ->
-    case cb_context:is_context(Context)
-        andalso whapps_config:get_binary(?MOD_CONFIG_CAT, <<"provisioning_type">>)
-    of
+    case cb_context:is_context(Context) andalso get_provisioning_type() of
         'false' -> 'false';
         <<"provisioner_v5">> ->
-            _ = spawn(fun() -> provisioner_v5:update_account(AccountId, Doc, AuthToken) end),
+            _ = spawn('provisioner_v5', 'update_account', [AccountId, Doc, AuthToken]),
             'true';
         _ -> 'false'
     end.
@@ -156,15 +171,13 @@ maybe_update_account(#cb_context{account_id=AccountId
 %%--------------------------------------------------------------------
 -spec maybe_delete_account(cb_context:context()) -> boolean().
 maybe_delete_account(#cb_context{account_id=AccountId, auth_token=AuthToken}=Context) ->
-    case cb_context:is_context(Context)
-        andalso whapps_config:get_binary(?MOD_CONFIG_CAT, <<"provisioning_type">>)
-    of
+    case cb_context:is_context(Context) andalso get_provisioning_type() of
         'false' -> 'false';
         <<"super_awesome_provisioner">> ->
             _ = spawn(fun() -> delete_account(Context) end),
             'true';
         <<"provisioner_v5">> ->
-            _ = spawn(fun() -> provisioner_v5:delete_account(AccountId, AuthToken) end),
+            _ = spawn('provisioner_v5', 'delete_account', [AccountId, AuthToken]),
             'true';
         _ -> 'false'
     end.
@@ -174,7 +187,7 @@ maybe_delete_account(#cb_context{account_id=AccountId, auth_token=AuthToken}=Con
 maybe_send_contact_list(Context) ->
     maybe_send_contact_list(Context, cb_context:resp_status(Context)).
 maybe_send_contact_list(Context, 'success') ->
-    _ = case whapps_config:get_binary(?MOD_CONFIG_CAT, <<"provisioning_type">>) of
+    _ = case get_provisioning_type() of
             <<"super_awesome_provisioner">> ->
                 spawn(fun() -> do_full_provision_contact_list(Context) end);
             _ -> 'ok'
@@ -696,3 +709,20 @@ send_provisioning_request(Template, MACAddress) ->
         {'ok', Code, _, Response} ->
             lager:debug("ERROR! OH NO! ~s. ~s", [Code, Response])
     end.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%%--------------------------------------------------------------------
+-spec get_provisioning_type() -> ne_binary() | 'undefined'.
+get_provisioning_type() ->
+    case whapps_config:get_non_empty(?MOD_CONFIG_CAT, <<"provisioning_type">>) of
+        'undefined' ->
+            lager:debug("using ~p for provisioner_type", [?PROVISIONER_CONFIG]),
+            whapps_config:get_non_empty(?PROVISIONER_CONFIG, <<"provisioning_type">>);
+        Result ->
+            lager:debug("using ~p for provisioner_type", [?MOD_CONFIG_CAT]),
+            Result
+    end.
+
