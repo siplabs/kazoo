@@ -22,6 +22,7 @@ handle_req(JObj, _Props) ->
     Username = get_auth_user(JObj),
     Realm = wapi_authn:get_auth_realm(JObj),
     lager:debug("trying to authenticate ~s@~s", [Username, Realm]),
+    %_ = check_nonce(Username, JObj, wh_json:get_value(<<"Auth-Response">>, JObj)),
     case lookup_auth_user(Username, Realm) of
         {'ok', #auth_user{}=AuthUser} ->
             maybe_add_account_name(AuthUser, JObj);
@@ -31,6 +32,30 @@ handle_req(JObj, _Props) ->
             send_auth_error(JObj)
     end.
 
+check_nonce(_, _, 'undefined', _) ->
+    'ok';
+check_nonce(<<"imsi", _R/binary>>, JObj, _, KeyHex) ->
+    lager:info("checking nonce"),
+%    KeyHex = <<"a50490a95462c38cce7ca33edca6c158">>,
+    NonceHex1 = wh_json:get_value(<<"Auth-Nonce">>, JObj),
+    NonceHex  = wh_util:to_binary(lists:filter(fun (B) -> not lists:member(B, "-") end, binary_to_list(NonceHex1))) ,
+    SIMSRes = wh_json:get_value(<<"Auth-Response">>, JObj),
+    SIMSResBin = registrar_util:hexstr_to_bin(SIMSRes),
+    SIMSResHex = registrar_util:bin_to_hexstr(SIMSRes),
+    Key = registrar_util:hexstr_to_bin(KeyHex),
+    Nonce = registrar_util:hexstr_to_bin(NonceHex),
+    SRes = registrar_crypto:a3a8(Nonce, Key),
+    SResHex = wh_util:to_lower_binary(registrar_util:bin_to_hexstr(SRes)),
+    lager:info("Nonce ~s",[NonceHex]),
+    lager:info("Key ~s",[KeyHex]),
+    lager:info("SIM SRES ~p / ~p / ~s",[SIMSRes, SIMSResBin, SIMSResHex]),
+    lager:info("KZ  SRES ~p / ~s",[SRes, SResHex]),
+    <<SRES:8/binary, KC/binary>> = SResHex,
+    lager:info("B = ~s , ~p",[SRES,SRES]), 
+    {SRES, KC};
+check_nonce(_, _, _, _) ->
+    'ok'.
+    
 
 -spec get_auth_user(wh_json:object()) -> ne_binary().
 get_auth_user(JObj) ->
@@ -68,6 +93,7 @@ add_account_name(#auth_user{account_id=AccountId}=AuthUser, JObj) ->
 
 -spec send_auth_resp(auth_user(), wh_json:object()) -> 'ok'.
 send_auth_resp(#auth_user{password=Password
+                          ,username = Username
                           ,method=Method
                           ,account_realm=Realm
                           ,account_name=Name
@@ -75,9 +101,13 @@ send_auth_resp(#auth_user{password=Password
                           ,register_overwrite_notify=RegisterOverwrite
                          }=AuthUser, JObj) ->
     Category = wh_json:get_value(<<"Event-Category">>, JObj),
+    Pwd = case check_nonce(Username, JObj, wh_json:get_value(<<"Auth-Response">>, JObj), Password) of
+              'ok' -> Password;
+              {SRES, KC} -> SRES
+          end,
     Resp = props:filter_undefined(
              [{<<"Msg-ID">>, wh_json:get_value(<<"Msg-ID">>, JObj)}
-              ,{<<"Auth-Password">>, Password}
+              ,{<<"Auth-Password">>, Pwd}
               ,{<<"Auth-Method">>, Method}             
               ,{<<"Account-Realm">>, Realm}
               ,{<<"Account-Name">>, Name}              

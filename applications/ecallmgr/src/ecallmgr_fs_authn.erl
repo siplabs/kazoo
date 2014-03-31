@@ -251,17 +251,19 @@ maybe_query_registrar(Realm, Username, Node, Id, Method, Props) ->
                              {'error', _}.
 query_registrar(Realm, Username, Node, Id, Method, Props) ->
     lager:debug("looking up credentials of ~s@~s for a ~s", [Username, Realm, Method]),
-    Req = [{<<"Msg-ID">>, Id}
+    Req = props:filter_undefined( [{<<"Msg-ID">>, Id}
            ,{<<"To">>, ecallmgr_util:get_sip_to(Props)}
            ,{<<"From">>, ecallmgr_util:get_sip_from(Props)}
            ,{<<"Orig-IP">>, ecallmgr_util:get_orig_ip(Props)}
            ,{<<"Method">>, Method}
            ,{<<"Auth-User">>, Username}
            ,{<<"Auth-Realm">>, Realm}
+           ,{<<"Auth-Nonce">>, props:get_value(<<"sip_auth_nonce">>, Props)}
+           ,{<<"Auth-Response">>, props:get_value(<<"sip_auth_response">>, Props)}
            ,{<<"Media-Server">>, wh_util:to_binary(Node)}
            ,{<<"Call-ID">>, props:get_value(<<"sip_call_id">>, Props, Id)}
            | wh_api:default_headers(?APP_NAME, ?APP_VERSION)
-          ],
+          ]),
     ReqResp = wh_amqp_worker:call(?ECALLMGR_AMQP_POOL
                                   ,props:filter_undefined(Req)
                                   ,fun wapi_authn:publish_req/1
@@ -289,7 +291,7 @@ maybe_defered_error(Realm, Username, JObj) ->
                                      ,{'db', AccountDb, AccountId}
                                      ]}
                          ],
-            wh_cache:store_local(?ECALLMGR_AUTH_CACHE, ?CREDS_KEY(Realm, Username), JObj, CacheProps),
+            %wh_cache:store_local(?ECALLMGR_AUTH_CACHE, ?CREDS_KEY(Realm, Username), JObj, CacheProps),
             {'ok', JObj}
     end.
 

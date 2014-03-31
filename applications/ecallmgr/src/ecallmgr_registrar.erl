@@ -586,6 +586,7 @@ get_auth_user(JObj) ->
 create_registration(JObj) ->
     lager:info("create_registration ~p",[JObj]),
 %    Username = wh_json:get_value(<<"Username">>, JObj),
+    Expires = wh_json:get_integer_value(<<"Expires">>, JObj, 60) + 180,
     Username = get_auth_user(JObj),
     Realm = wh_json:get_value(<<"Realm">>, JObj),
     Reg = existing_or_new_registration(Username, Realm),
@@ -599,7 +600,7 @@ create_registration(JObj) ->
                      ,from_user=wh_json:get_value(<<"From-User">>, JObj, <<"nouser">>)
                      ,call_id=wh_json:get_value(<<"Call-ID">>, JObj)
                      ,user_agent=wh_json:get_value(<<"User-Agent">>, JObj)
-                     ,expires=wh_json:get_integer_value(<<"Expires">>, JObj, 60)
+                     ,expires=Expires
                      ,contact=fix_contact(wh_json:get_value(<<"Contact">>, JObj))
                      ,last_registration=wh_util:current_tstamp()
                      ,registrar_node=wh_json:get_value(<<"Node">>, JObj)
