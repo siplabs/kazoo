@@ -25,17 +25,23 @@ handle_route_req(JObj, _Props) ->
 
 maybe_lookup_user(JObj) ->
     Realm = wh_json:get_value(<<"SIP-Request-Host">>, JObj),
-    lager:info("registrar rou_req ~p",[Realm]),
-    lager:info("registrar rou_req ~p",[wh_json:get_value(<<"From">>, JObj)]),
     [Username, _] = binary:split(wh_json:get_lower_binary(<<"From">>, JObj), <<"@">>),
     ViewOptions = [{'key', [Realm, Username]}],
-    lager:info("lookup result1:~p ~p ~p", [Realm, Username, ViewOptions]),
     case couch_mgr:get_results(?WH_SIP_DB, <<"credentials/lookup">>, ViewOptions) of
       {'ok', [Doc|_]} -> replay_route_req(JObj, Doc);
       _Else ->
-          lager:info("lookup result2:~p ~p ~p", [Realm, Username, _Else]),
-          maybe_replay_route_req(JObj)
+          maybe_lookup_imsi(Username, JObj)
     end.
+
+maybe_lookup_imsi(<<"IMSI", _IMSI/binary>>=Username, JObj) ->
+    ViewOptions = [{'key', Username}],
+    case couch_mgr:get_results(?WH_SIP_DB, <<"credentials/imsi">>, ViewOptions) of
+      {'ok', [Doc|_]} -> replay_route_req(JObj, Doc);
+      _Else ->
+          maybe_replay_route_req(JObj)
+    end;
+maybe_lookup_imsi(Username, JObj) ->
+    maybe_replay_route_req(JObj).
 
 -spec maybe_replay_route_req(wh_json:object()) -> any().
 maybe_replay_route_req(JObj) ->
