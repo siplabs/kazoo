@@ -52,6 +52,7 @@
                                       ,<<"Auth-Username">>
                                       ,<<"Account-Realm">>
                                       ,<<"Account-Name">>
+                                      ,<<"GSM-KC">>
                                       ,<<"Suppress-Unregister-Notifications">>
                                       ,<<"Register-Overwrite-Notify">>
                                      ]).
