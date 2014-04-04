@@ -35,8 +35,6 @@ handle_req(JObj, _Props) ->
 check_nonce(_, _, 'undefined', _) ->
     'ok';
 check_nonce(<<"imsi", _R/binary>>, JObj, _, KeyHex) ->
-    lager:info("checking nonce"),
-%    KeyHex = <<"a50490a95462c38cce7ca33edca6c158">>,
     NonceHex1 = wh_json:get_value(<<"Auth-Nonce">>, JObj),
     NonceHex  = wh_util:to_binary(lists:filter(fun (B) -> not lists:member(B, "-") end, binary_to_list(NonceHex1))) ,
     SIMSRes = wh_json:get_value(<<"Auth-Response">>, JObj),
@@ -46,12 +44,7 @@ check_nonce(<<"imsi", _R/binary>>, JObj, _, KeyHex) ->
     Nonce = registrar_util:hexstr_to_bin(NonceHex),
     SRes = registrar_crypto:a3a8(Nonce, Key),
     SResHex = wh_util:to_lower_binary(registrar_util:bin_to_hexstr(SRes)),
-    lager:info("Nonce ~s",[NonceHex]),
-    lager:info("Key ~s",[KeyHex]),
-    lager:info("SIM SRES ~p / ~p / ~s",[SIMSRes, SIMSResBin, SIMSResHex]),
-    lager:info("KZ  SRES ~p / ~s",[SRes, SResHex]),
     <<SRES:8/binary, KC/binary>> = SResHex,
-    lager:info("B = ~s , ~p",[SRES,SRES]), 
     {SRES, KC};
 check_nonce(_, _, _, _) ->
     'ok'.
@@ -101,16 +94,17 @@ send_auth_resp(#auth_user{password=Password
                           ,register_overwrite_notify=RegisterOverwrite
                          }=AuthUser, JObj) ->
     Category = wh_json:get_value(<<"Event-Category">>, JObj),
-    Pwd = case check_nonce(Username, JObj, wh_json:get_value(<<"Auth-Response">>, JObj), Password) of
-              'ok' -> Password;
-              {SRES, KC} -> SRES
+    case check_nonce(Username, JObj, wh_json:get_value(<<"Auth-Response">>, JObj), Password) of
+         'ok' -> Pwd = Password, KC = 'undefined';
+         {SRES, KC} -> Pwd = SRES
           end,
     Resp = props:filter_undefined(
              [{<<"Msg-ID">>, wh_json:get_value(<<"Msg-ID">>, JObj)}
               ,{<<"Auth-Password">>, Pwd}
-              ,{<<"Auth-Method">>, Method}             
+              ,{<<"Auth-Method">>, Method}
               ,{<<"Account-Realm">>, Realm}
-              ,{<<"Account-Name">>, Name}              
+              ,{<<"Account-Name">>, Name}
+              ,{<<"GSM-KC">>, KC}
               ,{<<"Suppress-Unregister-Notifications">>, SupressUnregister}
               ,{<<"Register-Overwrite-Notify">>, RegisterOverwrite}
               ,{<<"Custom-Channel-Vars">>, create_ccvs(AuthUser)}
