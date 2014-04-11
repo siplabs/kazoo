@@ -22,6 +22,7 @@
          ,notify_srv/1
          ,authz_srv/1
          ,cdr_srv/1
+         ,msg_srv/1
          ,conference_srv/1
          ,event_stream_sup/1
         ]).
@@ -38,6 +39,7 @@
 -define(CHILDREN, [<<"_node">>, <<"_authn">>, <<"_route">>, <<"_channel">>
                    ,<<"_config">>, <<"_resource">>, <<"_notify">>
                    ,<<"_conference">>, <<"_event_stream_sup">>
+                  ,<<"_msg">>
                   ]).
 
 %% ===================================================================
@@ -73,6 +75,9 @@ resource_srv(Supervisor) ->
 
 notify_srv(Supervisor) ->
     srv(supervisor:which_children(Supervisor), "yfiton_").
+
+msg_srv(Supervisor) ->
+    srv(supervisor:which_children(Supervisor), "gsm_").
 
 authz_srv(Supervisor) ->
     srv(supervisor:which_children(Supervisor), "zhtua_").

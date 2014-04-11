@@ -118,7 +118,7 @@ mwi_update(JObj, Props) ->
             lager:warning("failed to find contact for ~s@~s, dropping MWI update", [Username, Realm]);
         {'ok', Contact} ->
             Node = props:get_value('node', Props),
-            send_mwi_update(JObj, Node, Username, Realm, Contact)
+            'ok'%send_mwi_update(JObj, Node, Username, Realm, Contact)
     end. 
 
 -spec register_overwrite(wh_json:object(), wh_proplist()) -> no_return().

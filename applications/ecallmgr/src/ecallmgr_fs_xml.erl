@@ -575,7 +575,7 @@ domain_el(Name, Children) ->
 user_el(Id, Children) ->
     #xmlElement{name='user'
                 ,attributes=[xml_attrib('id', Id)
-                             ,xml_attrib('cacheable', 3600000000)
+                             ,xml_attrib('cacheable', 0)
                             ]
                 ,content=Children
                }.

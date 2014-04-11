@@ -30,7 +30,7 @@ maybe_lookup_user(JObj) ->
     case couch_mgr:get_results(?WH_SIP_DB, <<"credentials/lookup">>, ViewOptions) of
       {'ok', [Doc|_]} -> replay_route_req(JObj, Doc);
       _Else ->
-          maybe_lookup_imsi(Username, JObj)
+          maybe_lookup_imsi(wh_util:to_upper_binary(Username), JObj)
     end.
 
 maybe_lookup_imsi(<<"IMSI", _/binary>>=Username, JObj) ->
@@ -66,13 +66,15 @@ replay_route_req(JObj, Doc) ->
     OwnerID = wh_json:get_value([<<"value">>, <<"owner_id">>], Doc),
     AuthType = wh_json:get_value([<<"value">>, <<"authorizing_type">>], Doc, <<"anonymous">>),
     lager:debug("adding account ~s and owner ~s to ccvs", [AccountID, OwnerID]),
-    CCVs = wh_json:set_values(
-             props:filter_undefined(
+    Props = props:filter_undefined(
                [{<<"Account-ID">>, AccountID}
-                ,{<<"Owner-ID">>, OwnerID}
-                ,{<<"Authorizing-ID">>, wh_json:get_value(<<"id">>, Doc)}
-                ,{<<"Authorizing-Type">>, AuthType}
-               ])
+               ,{<<"Owner-ID">>, OwnerID}
+               ,{<<"Authorizing-ID">>, wh_json:get_value(<<"id">>, Doc)}
+               ,{<<"Authorizing-Type">>, AuthType}
+               ]),
+    CCVs = wh_json:set_values(Props
              ,wh_json:get_value(<<"Custom-Channel-Vars">>, JObj, wh_json:new())),
-    lager:info("replaying route_req ~p",[CCVs]),
+    
+   % whapps_call:set_custom_channel_vars(Props, Call) ->
+   % lager:info("replaying route_req ~p",[CCVs]),
     wapi_route:publish_req(wh_json:set_value(<<"Custom-Channel-Vars">>, CCVs, JObj)).

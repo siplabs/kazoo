@@ -21,6 +21,7 @@
                     ,register_overwrite_notify
                     ,account_realm
                     ,account_name
+                    ,nonce
                    }).
 -type auth_user() :: #auth_user{}.
 

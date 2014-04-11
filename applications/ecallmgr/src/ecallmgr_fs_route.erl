@@ -173,7 +173,9 @@ code_change(_OldVsn, State, _Extra) ->
 process_route_req(Node, FetchId, CallId, Props) ->
     put('callid', CallId),
     case wh_util:is_true(props:get_value(<<"variable_recovered">>, Props)) of
-        'false' -> search_for_route(Node, FetchId, CallId, Props);
+        'false' ->
+            Props1 = ecallmgr_fs_trusted:pre_process_routes(Node, FetchId, CallId, Props),
+            search_for_route(Node, FetchId, CallId, Props1);
         'true' ->
             lager:debug("recovered channel already exists on ~s, park it", [Node]),
             JObj = wh_json:from_list([{<<"Routes">>, []}
@@ -269,7 +271,8 @@ start_call_handling(Node, FetchId, CallId, JObj) ->
 
 -spec route_req(ne_binary(), ne_binary(), wh_proplist(), atom()) -> wh_proplist().
 route_req(CallId, FetchId, Props, Node) ->
-    [{<<"Msg-ID">>, FetchId}
+    %props:to_log(Props, <<"ROUTE REQ">>),
+    props:filter_undefined([{<<"Msg-ID">>, FetchId}
      ,{<<"Call-ID">>, CallId}
      ,{<<"Caller-ID-Name">>, props:get_first_defined([<<"variable_effective_caller_id_name">>
                                                       ,<<"Caller-Caller-ID-Name">>
@@ -280,6 +283,9 @@ route_req(CallId, FetchId, Props, Node) ->
      ,{<<"From-Network-Addr">>, props:get_first_defined([<<"variable_sip_h_X-AUTH-IP">>
                                                          ,<<"variable_sip_received_ip">>
                                                         ], Props)}
+     ,{<<"Access-Network-Info">>, props:get_value(<<"variable_sip_h_P-Access-Network-Info">>, Props)}
+     ,{<<"Physical-Info">>, props:get_value(<<"variable_sip_h_P-Phy-Info">>, Props)}
+     ,{<<"User-Agent">>, props:get_value(<<"variable_sip_user_agent">>, Props)}    
      ,{<<"To">>, ecallmgr_util:get_sip_to(Props)}
      ,{<<"From">>, ecallmgr_util:get_sip_from(Props)}
      ,{<<"Request">>, ecallmgr_util:get_sip_request(Props)}
@@ -288,7 +294,7 @@ route_req(CallId, FetchId, Props, Node) ->
      ,{<<"Switch-Hostname">>, props:get_value(<<"FreeSWITCH-Hostname">>, Props)}
      ,{<<"Custom-Channel-Vars">>, wh_json:from_list(route_req_ccvs(FetchId, Props))}
      | wh_api:default_headers(?APP_NAME, ?APP_VERSION)
-    ].
+    ]).
 
 -spec route_req_ccvs(ne_binary(), wh_proplist()) -> wh_proplist().
 route_req_ccvs(FetchId, Props) ->

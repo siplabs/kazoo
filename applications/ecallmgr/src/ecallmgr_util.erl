@@ -194,6 +194,7 @@ get_sip_from(Props, _) ->
               >>,
     props:get_first_defined([<<"Channel-Presence-ID">>
                              ,<<"variable_sip_from_uri">>
+                             ,<<"from">>
                             ], Props, Default).
 
 %% retrieves the sip address for the 'request' field
@@ -202,10 +203,12 @@ get_sip_request(Props) ->
     User = props:get_first_defined([<<"Hunt-Destination-Number">>
                                     ,<<"Caller-Destination-Number">>
                                     ,<<"sip_to_user">>
+                                    ,<<"to_user">>
                                    ], Props, <<"nouser">>),
     Realm = props:get_first_defined([?GET_CCV(<<"Realm">>)
                                      ,<<"variable_sip_auth_realm">>
                                      ,<<"variable_sip_to_host">>
+                                     ,<<"to_host">>
                                     ], Props, ?DEFAULT_REALM),
     <<User/binary, "@", Realm/binary>>.
 

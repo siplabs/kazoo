@@ -18,11 +18,9 @@ init() -> 'ok'.
 handle_req(JObj, _Props) ->
     'true' = wapi_authn:req_v(JObj),
     _ = wh_util:put_callid(JObj),
-    lager:info("registrar ~p",[JObj]),
     Username = get_auth_user(JObj),
     Realm = wapi_authn:get_auth_realm(JObj),
     lager:debug("trying to authenticate ~s@~s", [Username, Realm]),
-    %_ = check_nonce(Username, JObj, wh_json:get_value(<<"Auth-Response">>, JObj)),
     case lookup_auth_user(Username, Realm) of
         {'ok', #auth_user{}=AuthUser} ->
             maybe_add_account_name(AuthUser, JObj);
@@ -32,9 +30,9 @@ handle_req(JObj, _Props) ->
             send_auth_error(JObj)
     end.
 
-check_nonce(_, _, 'undefined', _) ->
-    'ok';
-check_nonce(<<"imsi", _R/binary>>, JObj, _, KeyHex) ->
+check_nonce(JObj, <<"IMSI", _R/binary>>, Nonce, Password, 'undefined') ->
+    {Password, 'undefined'};
+check_nonce(JObj, <<"IMSI", _R/binary>>,  'undefined', KeyHex, Response) ->
     NonceHex1 = wh_json:get_value(<<"Auth-Nonce">>, JObj),
     NonceHex  = wh_util:to_binary(lists:filter(fun (B) -> not lists:member(B, "-") end, binary_to_list(NonceHex1))) ,
     SIMSRes = wh_json:get_value(<<"Auth-Response">>, JObj),
@@ -46,8 +44,8 @@ check_nonce(<<"imsi", _R/binary>>, JObj, _, KeyHex) ->
     SResHex = wh_util:to_lower_binary(registrar_util:bin_to_hexstr(SRes)),
     <<SRES:8/binary, KC/binary>> = SResHex,
     {SRES, KC};
-check_nonce(_, _, _, _) ->
-    'ok'.
+check_nonce(_, _, _, Password, _) ->
+    {Password, 'undefined'}.
     
 
 -spec get_auth_user(wh_json:object()) -> ne_binary().
@@ -86,18 +84,17 @@ add_account_name(#auth_user{account_id=AccountId}=AuthUser, JObj) ->
 
 -spec send_auth_resp(auth_user(), wh_json:object()) -> 'ok'.
 send_auth_resp(#auth_user{password=Password
-                          ,username = Username
+                          ,username=Username
                           ,method=Method
                           ,account_realm=Realm
                           ,account_name=Name
                           ,suppress_unregister_notifications=SupressUnregister
                           ,register_overwrite_notify=RegisterOverwrite
+                          ,nonce=Nonce
                          }=AuthUser, JObj) ->
     Category = wh_json:get_value(<<"Event-Category">>, JObj),
-    case check_nonce(Username, JObj, wh_json:get_value(<<"Auth-Response">>, JObj), Password) of
-         'ok' -> Pwd = Password, KC = 'undefined';
-         {SRES, KC} -> Pwd = SRES
-          end,
+    AuthResponse = wh_json:get_value(<<"Auth-Response">>, JObj),
+    {Pwd, KC} = check_nonce(JObj, wh_util:to_upper_binary(Username), Nonce, Password, AuthResponse),
     Resp = props:filter_undefined(
              [{<<"Msg-ID">>, wh_json:get_value(<<"Msg-ID">>, JObj)}
               ,{<<"Auth-Password">>, Pwd}
@@ -105,12 +102,13 @@ send_auth_resp(#auth_user{password=Password
               ,{<<"Account-Realm">>, Realm}
               ,{<<"Account-Name">>, Name}
               ,{<<"GSM-KC">>, KC}
+              ,{<<"GSM-Nonce">>, Nonce}
               ,{<<"Suppress-Unregister-Notifications">>, SupressUnregister}
               ,{<<"Register-Overwrite-Notify">>, RegisterOverwrite}
               ,{<<"Custom-Channel-Vars">>, create_ccvs(AuthUser)}
               | wh_api:default_headers(Category, <<"authn_resp">>, ?APP_NAME, ?APP_VERSION)
              ]),
-    lager:info("sending SIP authentication reply, with credentials ~p",[Resp]),
+    %lager:info("sending SIP authentication reply, with credentials ~p",[Resp]),
     wapi_authn:publish_resp(wh_json:get_value(<<"Server-ID">>, JObj), Resp).
 
 -spec send_auth_error(wh_json:object()) -> 'ok'.
@@ -299,6 +297,7 @@ jobj_to_auth_user(JObj, Username, Realm) ->
                ,owner_id = wh_json:get_value(<<"owner_id">>, AuthDoc)
                ,suppress_unregister_notifications = wh_json:is_true(<<"suppress_unregister_notifications">>, AuthDoc)
                ,register_overwrite_notify = wh_json:is_true(<<"register_overwrite_notify">>, AuthDoc)
+               ,nonce = get_nonce(AuthDoc)
               }.
 
 %%-----------------------------------------------------------------------------
@@ -318,6 +317,10 @@ get_account_id(JObj) ->
         'undefined' -> 'undefined';
         AccountId -> wh_util:format_account_id(AccountId, 'raw')
     end.
+
+-spec get_nonce(wh_json:object()) -> api_binary().
+get_nonce(JObj) ->
+    wh_json:get_value([<<"sip">>,<<"nonce">>], JObj).
 
 %%-----------------------------------------------------------------------------
 %% @private

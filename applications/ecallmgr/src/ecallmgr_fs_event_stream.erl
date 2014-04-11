@@ -216,14 +216,17 @@ process_event(Data, Node) ->
             wh_util:put_callid(UUID),
 
             EventName = props:get_value(<<"Event-Subclass">>, Props, props:get_value(<<"Event-Name">>, Props)),
-            maybe_send_event(EventName, UUID, Props, Node),
-            process_event(EventName, UUID, Props, Node);
+            Props1 = ecallmgr_fs_trusted:pre_process_event(EventName, UUID, Props, Node),
+            maybe_send_event(EventName, UUID, Props1, Node),
+            process_event(EventName, UUID, Props1, Node);
          _Else ->
             'ok'
     end.
 
+
+
 -spec process_event(ne_binary(), api_binary(), wh_proplist(), atom()) -> any().
-process_event(<<"CHANNEL_CREATE">>, UUID, _Props, Node) ->
+process_event(<<"CHANNEL_CREATE">>, UUID, Props, Node) ->
     maybe_start_event_listener(Node, UUID);
 process_event(?CHANNEL_MOVE_RELEASED_EVENT_BIN, _, Props, Node) ->
     UUID = props:get_value(<<"old_node_channel_uuid">>, Props),
@@ -237,9 +240,18 @@ process_event(?CHANNEL_MOVE_COMPLETE_EVENT_BIN, _, Props, Node) ->
               );
 process_event(<<"sofia::register">>, _UUID, Props, Node) ->
     gproc:send({'p', 'l', ?REGISTER_SUCCESS_REG}, ?REGISTER_SUCCESS_MSG(Node, Props));
-process_event(_, _, _, _) -> 'ok'.
+process_event(_EVT, _, _, _) ->
+    lager:debug("event ~p not processed",[_EVT]),
+    'ok'.
 
 -spec maybe_send_event(ne_binary(), api_binary(), wh_proplist(), atom()) -> any().
+maybe_send_event(<<"CHANNEL_CREATE">>=EventName, UUID, Props, Node) ->
+    case wh_util:is_true(props:get_value(<<"variable_channel_is_moving">>, Props)) of
+        'true' -> 'ok';
+        'false' ->
+            gproc:send({'p', 'l', ?FS_EVENT_REG_MSG(Node, EventName)}, {'event', [UUID | Props]}),
+            maybe_send_call_event(UUID, Props, Node)
+    end;
 maybe_send_event(EventName, UUID, Props, Node) ->
     case wh_util:is_true(props:get_value(<<"variable_channel_is_moving">>, Props)) of
         'true' -> 'ok';

@@ -22,7 +22,7 @@
          ,get_auth_realm/1
          ,get_auth_user/1
          ,req_event_type/0
-         ,is_actionable_resp/1
+         ,is_actionable_resp/1        
         ]).
 
 %% routing keys to use in the callmgr exchange
@@ -43,7 +43,8 @@
                                      ,<<"From-Network-Addr">>
                                      ,<<"Switch-Hostname">>, <<"Switch-Nodename">>
                                      ,<<"Ringback-Media">>, <<"Transfer-Media">>
-                                     ,<<"SIP-Request-Host">>
+                                     ,<<"SIP-Request-Host">>, <<"Access-Network-Info">>
+                                     ,<<"Physical-Info">>, <<"User-Agent">>    
                                     ]).
 -define(ROUTE_REQ_VALUES, [{<<"Event-Category">>, ?EVENT_CATEGORY}
                            ,{<<"Event-Name">>, ?ROUTE_REQ_EVENT_NAME}

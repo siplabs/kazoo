@@ -93,6 +93,7 @@
                        ,initial = 'true'
                        ,account_realm
                        ,account_name
+                       ,original_contact
                       }).
 
 -type registration() :: #registration{}.
@@ -584,8 +585,6 @@ get_auth_user(JObj) ->
 
 -spec create_registration(wh_json:object()) -> registration().
 create_registration(JObj) ->
-    lager:info("create_registration ~p",[JObj]),
-%    Username = wh_json:get_value(<<"Username">>, JObj),
     Expires = wh_json:get_integer_value(<<"Expires">>, JObj, 60) + 180,
     Username = get_auth_user(JObj),
     Realm = wh_json:get_value(<<"Realm">>, JObj),
@@ -601,6 +600,7 @@ create_registration(JObj) ->
                      ,call_id=wh_json:get_value(<<"Call-ID">>, JObj)
                      ,user_agent=wh_json:get_value(<<"User-Agent">>, JObj)
                      ,expires=Expires
+                     ,original_contact=wh_json:get_value(<<"Contact">>, JObj)
                      ,contact=fix_contact(wh_json:get_value(<<"Contact">>, JObj))
                      ,last_registration=wh_util:current_tstamp()
                      ,registrar_node=wh_json:get_value(<<"Node">>, JObj)
@@ -654,8 +654,9 @@ registration_notify(#registration{previous_contact=PrevContact
     wapi_notifications:publish_register_overwrite(Props).
 
 -spec maybe_initial_registration(registration()) -> 'ok'.
-maybe_initial_registration(#registration{initial='false'}) -> 'ok';
-maybe_initial_registration(#registration{initial='true'}=Reg) ->
+%maybe_initial_registration(#registration{initial='false'}) -> 'ok';
+%maybe_initial_registration(#registration{initial='true'}=Reg) ->
+maybe_initial_registration(#registration{}=Reg) ->
     initial_registration(Reg).
 
 -spec initial_registration(registration()) -> 'ok'.
@@ -700,7 +701,7 @@ query_authn(#registration{username=Username
                           ,registrar_node=Node
                           ,call_id=CallId
                          }=Reg) ->
-    lager:debug("looking up credentials of ~s@~s", [Username, Realm]),
+    lager:info("query_authn looking up credentials of ~s@~s", [Username, Realm]),
     Req = [{<<"To">>, <<ToUser/binary, "@", ToHost/binary>>}
            ,{<<"From">>, <<FromUser/binary, "@", FromHost/binary>>}
            ,{<<"Orig-IP">>, NetworkIP}
@@ -717,7 +718,9 @@ query_authn(#registration{username=Username
                                   ,fun wapi_authn:resp_v/1
                                  ),
     case ReqResp of
-        {'error', _} -> Reg;
+        {'error', _E} ->
+            lager:info("Error getting authn ~p",[_E]),
+            Reg;
         {'ok', JObj} ->
             lager:info("received authn information ~p",[JObj]),
             CCVs = wh_json:get_value(<<"Custom-Channel-Vars">>, JObj, wh_json:new()),
@@ -807,6 +810,7 @@ to_props(Reg) ->
      ,{<<"Network-Port">>, Reg#registration.network_port}
      ,{<<"Event-Timestamp">>, Reg#registration.last_registration}
      ,{<<"Contact">>, Reg#registration.contact}
+     ,{<<"Original-Contact">>, Reg#registration.original_contact}
      ,{<<"Expires">>, Reg#registration.expires}
      ,{<<"Account-ID">>, Reg#registration.account_id}
      ,{<<"Account-DB">>, Reg#registration.account_db}

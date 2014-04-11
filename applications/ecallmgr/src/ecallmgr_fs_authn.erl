@@ -165,9 +165,9 @@ handle_directory_lookup(Id, Props, Node) ->
     put('callid', Id),
     case props:get_value(<<"sip_auth_method">>, Props) of
         <<"REGISTER">> ->
-            lager:debug("received fetch request (~s) for sip registration creds from ~s", [Id, Node]);
+            lager:info("received fetch request (~s) for sip registration creds from ~s", [Id, Node]);
         Else ->
-            lager:debug("received fetch request for ~s (~s) user creds from ~s", [Else, Id, Node])
+            lager:info("received fetch request for ~s (~s) user creds from ~s", [Else, Id, Node])
     end,
     whistle_stats:increment_counter("register-attempt"),
     case {props:get_value(<<"Event-Name">>, Props), props:get_value(<<"action">>, Props)} of
@@ -291,7 +291,7 @@ maybe_defered_error(Realm, Username, JObj) ->
                                      ,{'db', AccountDb, AccountId}
                                      ]}
                          ],
-            %wh_cache:store_local(?ECALLMGR_AUTH_CACHE, ?CREDS_KEY(Realm, Username), JObj, CacheProps),
+            wh_cache:store_local(?ECALLMGR_AUTH_CACHE, ?CREDS_KEY(Realm, Username), JObj, CacheProps),
             {'ok', JObj}
     end.
 
