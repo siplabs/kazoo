@@ -1,0 +1,12 @@
+{application, imsi,
+ [
+  {description, "Registrar For the GSM World"},
+  {vsn, "0.0.3"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { imsi_app, []} },
+  {env, []}
+ ]}.
