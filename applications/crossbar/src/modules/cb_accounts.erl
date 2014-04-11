@@ -317,7 +317,7 @@ validate_realm_is_unique(AccountId, Context) ->
 -spec validate_account_name_is_unique(api_binary(), cb_context:context()) -> cb_context:context().
 validate_account_name_is_unique(AccountId, Context) ->
     Name = wh_json:get_ne_value(<<"name">>, cb_context:req_data(Context)),
-    case is_unique_account_name(Name) of
+    case is_unique_account_name(AccountId, Name) of
         'true' -> validate_account_schema(AccountId, Context);
         'false' ->
             C = cb_context:add_validation_error([<<"name">>]
@@ -417,6 +417,7 @@ leak_pvt_allow_additions(Context) ->
     JObj = cb_context:doc(Context),
     RespJObj = cb_context:resp_data(Context),
     AllowAdditions = wh_json:is_true(<<"pvt_wnm_allow_additions">>, JObj, 'false'),
+
     leak_pvt_superduper_admin(
       cb_context:set_resp_data(Context
                                ,wh_json:set_value(<<"wnm_allow_additions">>, AllowAdditions, RespJObj))
@@ -495,8 +496,8 @@ leak_billing_mode(Context) ->
 %%--------------------------------------------------------------------
 -spec load_children(ne_binary(), cb_context:context()) -> cb_context:context().
 load_children(AccountId, Context) ->
-    crossbar_doc:load_view(?AGG_VIEW_CHILDREN, [{<<"startkey">>, [AccountId]}
-                                                ,{<<"endkey">>, [AccountId, wh_json:new()]}
+    crossbar_doc:load_view(?AGG_VIEW_CHILDREN, [{'startkey', [AccountId]}
+                                                ,{'endkey', [AccountId, wh_json:new()]}
                                                ], Context, fun normalize_view_results/2).
 
 %%--------------------------------------------------------------------
@@ -507,8 +508,8 @@ load_children(AccountId, Context) ->
 %%--------------------------------------------------------------------
 -spec load_descendants(ne_binary(), cb_context:context()) -> cb_context:context().
 load_descendants(AccountId, Context) ->
-    crossbar_doc:load_view(?AGG_VIEW_DESCENDANTS, [{<<"startkey">>, [AccountId]}
-                                                   ,{<<"endkey">>, [AccountId, wh_json:new()]}
+    crossbar_doc:load_view(?AGG_VIEW_DESCENDANTS, [{'startkey', [AccountId]}
+                                                   ,{'endkey', [AccountId, wh_json:new()]}
                                                   ], Context, fun normalize_view_results/2).
 
 %%--------------------------------------------------------------------
@@ -519,8 +520,8 @@ load_descendants(AccountId, Context) ->
 %%--------------------------------------------------------------------
 -spec load_siblings(ne_binary(), cb_context:context()) -> cb_context:context().
 load_siblings(AccountId, Context) ->
-    Context1 = crossbar_doc:load_view(?AGG_VIEW_PARENT, [{<<"startkey">>, AccountId}
-                                                         ,{<<"endkey">>, AccountId}
+    Context1 = crossbar_doc:load_view(?AGG_VIEW_PARENT, [{'startkey', AccountId}
+                                                         ,{'endkey', AccountId}
                                                         ], Context),
     case cb_context:resp_status(Context1) of
         'success' ->
@@ -803,12 +804,13 @@ is_unique_realm(AccountId, Realm) ->
 %% This function will determine if the account name is unique
 %% @end
 %%--------------------------------------------------------------------
--spec is_unique_account_name(ne_binary()) -> boolean().
-is_unique_account_name(Name) ->
+-spec is_unique_account_name(ne_binary(), ne_binary()) -> boolean().
+is_unique_account_name(AccountId, Name) ->
     ViewOptions = [{'key', Name}],
     case couch_mgr:get_results(?WH_ACCOUNTS_DB, ?AGG_VIEW_NAME, ViewOptions) of
         {'ok', []} -> 'true';
         {'error', 'not_found'} -> 'true';
+        {'ok', [JObj|_]} -> wh_json:get_value(<<"id">>, JObj) =:= AccountId;
         _Else ->
             lager:error("error ~p checking view ~p in ~p", [_Else, ?AGG_VIEW_NAME, ?WH_ACCOUNTS_DB]),
             'false'

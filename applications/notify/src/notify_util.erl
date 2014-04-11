@@ -21,6 +21,7 @@
          ,find_admin/1
          ,get_account_doc/1
          ,qr_code_image/1
+         ,get_charset_params/1
         ]).
 
 -include("notify.hrl").
@@ -144,7 +145,7 @@ compile_default_template(TemplateModule, Category, Key) ->
                    Else -> Else
                end,
     lager:debug("compiling ~s: '~s'", [TemplateModule, Template]),
-    {'ok', TemplateModule} = erlydtl:compile_template(Template, TemplateModule).
+    {'ok', TemplateModule} = erlydtl:compile_template(Template, TemplateModule, [{'out_dir', 'false'}]).
 
 get_default_template(Category, Key) ->
     File = category_to_file(Category),
@@ -181,7 +182,7 @@ render_template(Template, DefaultTemplate, Props) ->
                                                         ])
                                          ,'true'),
         lager:debug("compiling custom ~s template", [DefaultTemplate]),
-        {'ok', CustomTemplate} = erlydtl:compile_template(Template, CustomTemplate),
+        {'ok', CustomTemplate} = erlydtl:compile_template(Template, CustomTemplate, [{'out_dir', 'false'}]),
 
         lager:debug("rendering custom template ~s", [CustomTemplate]),
         Result = CustomTemplate:render(Props),
@@ -412,3 +413,16 @@ qr_code_image(Text) ->
             lager:debug("failed to generate QR code: ~p", [_E]),
             'undefined'
     end.
+
+
+-spec get_charset_params(term()) -> tuple().
+get_charset_params(Service) ->
+        case props:get_value(<<"template_charset">>, Service) of
+            <<>> -> {[], <<>>};
+            <<_/binary>> = Charset ->
+                {[{<<"content-type-params">>,[{<<"charset">>,Charset}]}]
+                 ,iolist_to_binary([<<";charset=">>, Charset])
+                };
+            _ -> {[], <<>>}
+        end.
+

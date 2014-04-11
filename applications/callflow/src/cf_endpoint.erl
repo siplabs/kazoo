@@ -12,7 +12,7 @@
 -include("callflow.hrl").
 
 -export([get/1, get/2]).
--export([flush/2]).
+-export([flush_account/1, flush/2]).
 -export([build/2, build/3]).
 -export([create_call_fwd_endpoint/3
          ,create_sip_endpoint/3
@@ -117,12 +117,14 @@ merge_attributes(Endpoint) ->
             ,<<"do_not_disturb">>
             ,<<"call_forward">>
             ,<<"dial_plan">>
+            ,<<"metaflows">>
             ,?CF_ATTR_LOWER_KEY
            ],
     merge_attributes(Keys, 'undefined', Endpoint, 'undefined').
 
 -spec merge_attributes(ne_binaries(), api_object(), wh_json:object(), api_object()) ->
                               wh_json:object().
+merge_attributes([], _AccountDoc, Endpoint, _OwnerDoc) -> Endpoint;
 merge_attributes(Keys, Account, Endpoint, 'undefined') ->
     AccountDb = wh_json:get_value(<<"pvt_account_db">>, Endpoint),
     JObj = get_user(AccountDb, Endpoint),
@@ -140,9 +142,6 @@ merge_attributes(Keys, 'undefined', Endpoint, Owner) ->
         {'error', _} ->
             merge_attributes(Keys, wh_json:new(), Endpoint, Owner)
     end;
-merge_attributes([], _, Endpoint, _) -> Endpoint;
-
-
 merge_attributes([<<"call_restriction">>|Keys], Account, Endpoint, Owner) ->
     Classifiers = wh_json:get_keys(wnm_util:available_classifiers()),
     Update = merge_call_restrictions(Classifiers, Account, Endpoint, Owner),
@@ -192,7 +191,8 @@ merge_attributes([Key|Keys], Account, Endpoint, Owner) ->
     EndpointAttr = wh_json:get_ne_value(Key, Endpoint, wh_json:new()),
     OwnerAttr = wh_json:get_ne_value(Key, Owner, wh_json:new()),
     Merged = wh_json:merge_recursive([AccountAttr, EndpointAttr, OwnerAttr]
-                                     ,fun(_, V) -> wh_util:is_not_empty(V) end),
+                                     ,fun(_, V) -> wh_util:is_not_empty(V) end
+                                    ),
     merge_attributes(Keys, Account, wh_json:set_value(Key, Merged, Endpoint), Owner).
 
 -spec caller_id_owner_attr(wh_json:object()) -> wh_json:object().
@@ -329,7 +329,6 @@ do_all_restrict(Key, JObj) ->
                        ,<<"action">>
                       ], JObj) =:= <<"deny">>.
 
-
 -spec create_endpoint_name(api_binary(), api_binary(), api_binary(), api_binary()) -> api_binary().
 create_endpoint_name('undefined', 'undefined', 'undefined', Account) -> Account;
 create_endpoint_name('undefined', 'undefined', Endpoint, _) -> Endpoint;
@@ -343,7 +342,17 @@ create_endpoint_name(First, Last, _, _) -> <<First/binary, " ", Last/binary>>.
 %% Flush the callflow cache
 %% @end
 %%--------------------------------------------------------------------
+-spec flush_account(ne_binary()) -> any().
 -spec flush(ne_binary(), ne_binary()) -> any().
+flush_account(AccountDb) ->
+    ToRemove =
+        wh_cache:filter_local(?CALLFLOW_CACHE, fun({?MODULE, Db, _Id}, _Value) ->
+                                                       Db =:= AccountDb;
+                                                  (_, _) -> 'false'
+                                               end),
+    _ = [flush(Db, Id)|| {{?MODULE, Db, Id}, _} <- ToRemove],
+    'ok'.
+
 flush(Db, Id) ->
     wh_cache:erase_local(?CALLFLOW_CACHE, {?MODULE, Db, Id}),
     {'ok', Rev} = couch_mgr:lookup_doc_rev(Db, Id),
@@ -507,7 +516,7 @@ create_endpoints(Endpoint, Properties, Call) ->
 -type ep_routine() :: fun((wh_json:object(), wh_json:object(), whapps_call:call()) ->
                                  {'error', _} | wh_json:object()).
 -spec try_create_endpoint(ep_routine(), wh_json:objects(), wh_json:object(), wh_json:object(), whapps_call:call()) ->
-                                       wh_json:objects().    
+                                       wh_json:objects().
 try_create_endpoint(Routine, Endpoints, Endpoint, Properties, Call) when is_function(Routine, 3) ->
     try Routine(Endpoint, Properties, Call) of
         {'error', _R} ->
@@ -555,7 +564,7 @@ is_call_forward_enabled(Endpoint, Properties) ->
         andalso (wh_json:is_false(<<"direct_calls_only">>, CallForwarding, 'true')
                  orelse
                    (not lists:member(Source, ?NON_DIRECT_MODULES))).
-        
+
 -spec maybe_create_endpoint(ne_binary(), wh_json:object(), wh_json:object(), whapps_call:call()) ->
                                    wh_json:object() | {'error', ne_binary()}.
 maybe_create_endpoint(<<"sip">>, Endpoint, Properties, Call) ->
@@ -592,7 +601,7 @@ convert_endpoint_type(<<"mobile">>) -> <<"mobile">>;
 convert_endpoint_type(_Else) -> 'undefined'.
 
 -spec maybe_guess_endpoint_type(wh_json:object()) -> ne_binary().
-maybe_guess_endpoint_type(Endpoint) ->    
+maybe_guess_endpoint_type(Endpoint) ->
     case whapps_config:get_is_true(?CF_CONFIG_CAT, <<"restrict_to_known_types">>, 'false') of
         'false' -> guess_endpoint_type(Endpoint);
         'true' ->
@@ -692,6 +701,7 @@ create_sip_endpoint(Endpoint, Properties, Call) ->
          ,{<<"Force-Fax">>, get_force_fax(Endpoint)}
          ,{<<"Ignore-Completed-Elsewhere">>, get_ignore_completed_elsewhere(Endpoint)}
          ,{<<"Failover">>, maybe_build_failover(Endpoint, Call)}
+         ,{<<"Metaflows">>, wh_json:get_value(<<"metaflows">>, Endpoint)}
         ],
     wh_json:from_list(props:filter_undefined(Prop)).
 
@@ -787,7 +797,7 @@ create_call_fwd_endpoint(Endpoint, Properties, Call) ->
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% 
+%%
 %% @end
 %%--------------------------------------------------------------------
 -spec create_mobile_endpoint(wh_json:object(), wh_json:object(), whapps_call:call()) ->
@@ -836,7 +846,7 @@ build_mobile_route(MDN) ->
             maybe_add_mobile_path(Route)
     end.
 
-maybe_add_mobile_path(Route) ->    
+maybe_add_mobile_path(Route) ->
     Path = whapps_config:get_binary(?CF_MOBILE_CONFIG_CAT, <<"path">>, ?DEFAULT_MOBILE_PATH),
     case wh_util:is_empty(Path) of
         'false' -> <<Route/binary, ";fs_path=sip:", Path/binary>>;

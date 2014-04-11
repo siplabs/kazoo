@@ -2,8 +2,8 @@
 %%% @copyright (C) 2014
 %%% @doc
 %%% This listener handles call CHANNEL_DESTROY events.
-%%% It is started by cf_singular_call_hooks and will 
-%%% trigger when it is time to send the call end hook. 
+%%% It is started by cf_singular_call_hooks and will
+%%% trigger when it is time to send the call end hook.
 %%% @end
 %%% @contributors
 %%%   Benedict Chan
@@ -31,8 +31,10 @@
 
 %% By convention, we put the options here in macros, but not required.
 -define(BINDINGS(CallID), [{'call', [{'callid', CallID}
-                                     ,{'restrict_to', [<<"CHANNEL_DESTROY">>
-                                                      ]}
+                                     ,{'restrict_to',
+                                        [ <<"CHANNEL_DESTROY">>
+                                        , <<"CHANNEL_TRANSFEROR">>
+                                        ]}
                                     ]}
                            ,{'self', []}
                           ]).
@@ -70,6 +72,9 @@ handle_call_event(JObj, Props) ->
     case wh_util:get_event_type(JObj) of
         {<<"call_event">>, <<"CHANNEL_DESTROY">>} ->
             gen_listener:cast(props:get_value('server', Props), {'end_hook', JObj});
+        {<<"call_event">>, <<"CHANNEL_TRANSFEROR">>} ->
+            % stop the listener so we don't send the destroy event
+            gen_listener:cast(props:get_value('server', Props), {'stop', JObj});
         {_, _Evt} -> lager:debug("ignore event ~p", [_Evt])
     end.
 
@@ -82,10 +87,17 @@ handle_call_event(JObj, Props) ->
 %% @doc
 %% Initializes the listener, and sends the init hook
 %%--------------------------------------------------------------------
--spec init([whapps_call:call()]) -> {'ok', state()}.
+-spec init([whapps_call:call()]) ->
+                  {'ok', state()}.
 init([Call]) ->
-    % send the init hook now
-    gen_listener:cast(self(), {'init_hook'}),
+    %% ReferredBy is interesting because we use it to tell if the call was forwarded
+    ReferredBy = whapps_call:custom_channel_var(<<"Referred-By">>, Call),
+
+    %% send the init hook only if we were not a forwarded call
+    case ReferredBy of
+        'undefined' -> gen_listener:cast(self(), {'init_hook'});
+        _ -> 'ok'
+    end,
 
     lager:debug("started event listener for cf_singular_hook"),
     {'ok', #state{call=Call}}.
@@ -96,7 +108,8 @@ init([Call]) ->
 %% Handle call messages
 %% @end
 %%--------------------------------------------------------------------
--spec handle_call(term(), term(), state()) -> {'reply', {'error', 'not_implemented'}, state()}.
+-spec handle_call(term(), term(), state()) ->
+                         {'reply', {'error', 'not_implemented'}, state()}.
 handle_call(_Request, _From, State) ->
     {'reply', {'error', 'not_implemented'}, State}.
 
@@ -106,12 +119,15 @@ handle_call(_Request, _From, State) ->
 %% Handle cast messages
 %% @end
 %%--------------------------------------------------------------------
--spec handle_cast(term(), state()) -> {'noreply', state()} | {'stop', 'normal', state()}.
+-spec handle_cast(term(), state()) -> {'noreply', state()} |
+                                      {'stop', 'normal', state()}.
 handle_cast({'init_hook'}, #state{call=Call}=State) ->
     cf_singular_call_hooks:send_init_hook(Call),
     {'noreply', State};
 handle_cast({'end_hook', JObj}, #state{call=Call}=State) ->
     cf_singular_call_hooks:send_end_hook(Call, JObj),
+    {'stop', 'normal', State};
+handle_cast({'stop', _JObj}, #state{call=_Call}=State) ->
     {'stop', 'normal', State};
 handle_cast(_Msg, State) ->
     lager:debug("unhandled cast: ~p", [_Msg]),
@@ -157,6 +173,6 @@ terminate(_Reason, _State) ->
 %% Convert process state when code is changed
 %% @end
 %%--------------------------------------------------------------------
--spec code_change(term(), state(), term()) -> {ok, state()} | {error, term()}.
+-spec code_change(term(), state(), term()) -> {'ok', state()}.
 code_change(_OldVsn, State, _Extra) ->
     {'ok', State}.
