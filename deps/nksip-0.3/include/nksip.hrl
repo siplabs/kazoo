@@ -22,7 +22,6 @@
 -ifndef(NKSIP_HRL_).
 -define(NKSIP_HRL_, 1).
 
--compile([{'parse_transform', 'kazoo_transform'}]).
 
 %% ===================================================================
 %% Defines

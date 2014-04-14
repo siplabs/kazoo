@@ -3,55 +3,55 @@ ROOT = ../..
 REBAR = $(ROOT)/utils/rebar/rebar
 DIALYZER = dialyzer
 
-EBINS = $(shell find $(ROOT)/core -maxdepth 2 -name ebin -print) $(shell find $(ROOT)/deps -maxdepth 2 -name ebin -print)
-PA = $(foreach EBIN,$(EBINS),-pa $(EBIN))
+all: app
 
-ERLC_OPTS = +debug_info +warn_export_all -Iinclude -I$(ROOT)/core -I$(ROOT)/deps $(PA)
-     # +bin_opt_info
+deps:
+	@$(REBAR) get-deps
 
-DIRS =  . \
-    $(ROOT)/core/whistle-1.0.0 \
-    $(ROOT)/core/whistle_amqp-1.0.0 \
-    $(ROOT)/core/whistle_couch-1.0.0 \
-    $(ROOT)/core/whistle_apps-1.0.0
+app: deps
+	@$(REBAR) compile
 
-.PHONY: all compile clean
-
-all: compile
-
-MODULES = $(shell ls src/*.erl | sed 's/src\///;s/\.erl/,/' | sed '$$s/.$$//')
-
-compile: ebin/$(PROJECT).app
-	@cat src/$(PROJECT).app.src \
-		| sed 's/{modules, \[\]}/{modules, \[$(MODULES)\]}/' \
-		> ebin/$(PROJECT).app
-	-@$(MAKE) ebin/$(PROJECT).app
-
-ebin/$(PROJECT).app: src/*.erl
-	@mkdir -p ebin/
-	erlc -v $(ERLC_OPTS) -o ebin/ -pa ebin/ $?
-
-compile-test: test/$(PROJECT).app
-	@cat src/$(PROJECT).app.src \
-		| sed 's/{modules, \[\]}/{modules, \[$(MODULES)\]}/' \
-		> test/$(PROJECT).app
-	-@$(MAKE) test/$(PROJECT).app
-
-test/$(PROJECT).app: src/*.erl
-	@mkdir -p test/
-	erlc -v $(ERLC_OPTS)  -o test/ -pa test/  $?
-
-clean:
-	rm -f ebin/*
-	rm -f test/*.beam test/$(PROJECT).app
+clean: clean-docs clean-logs
+	@$(REBAR) clean
 	rm -f erl_crash.dump
 
-test: clean compile-test eunit
+clean-logs:
+	rm -rf log 
+	rm -rf samples/nksip_loadtest/log 
+	rm -rf samples/nksip_pbx/log 
+	rm -rf samples/nksip_tutorial/log 
 
-eunit: compile-test
-	erl -noshell -pa test -eval "eunit:test([$(MODULES)], [verbose])" -s init stop
+docs: clean-docs
+	@$(REBAR) doc skip_deps=true
 
-dialyze:
-	@$(DIALYZER) $(foreach DIR,$(DIRS),$(DIR)/ebin) \
-		--plt $(ROOT)/.platform_dialyzer.plt --no_native \
-		-Werror_handling -Wrace_conditions -Wunmatched_returns # -Wunderspecs
+clean-docs:
+	rm -f doc/*.css doc/*.html \
+	      doc/*.png doc/edoc-info
+	rm -f samples/nksip_loadtest/doc/*.css samples/nksip_loadtest/doc/*.html \
+	      samples/nksip_loadtest/doc/*.png samples/nksip_loadtest/doc/edoc-info
+	rm -f samples/nksip_pbx/doc/*.css samples/nksip_pbx/doc/*.html \
+	      samples/nksip_pbx/doc/*.png samples/nksip_pbx/doc/edoc-info
+	rm -f samples/nksip_tutorial/doc/*.css samples/nksip_tutorial/doc/*.html \
+	      samples/nksip_tutorial/doc/*.png samples/nksip_tutorial/doc/edoc-info
+
+tests: app eunit
+
+eunit:
+	@$(REBAR) eunit skip_deps=true
+
+build-plt:
+	@$(DIALYZER) --build_plt --output_plt .$(PROJECT).plt \
+		--apps erts kernel stdlib sasl tools inets crypto public_key ssl eunit
+
+dialyze: app
+	@$(DIALYZER) ebin/nksip*.beam --plt .$(PROJECT).plt \
+	-Werror_handling  #-Wunmatched_returns -Wrace_conditions -Wunderspecs
+
+shell: 
+	erl -config priv/app.config -args_file priv/vm.args 
+
+build_tests:
+	erlc -pa ebin -pa deps/lager/ebin -o ebin -I include \
+	+export_all +debug_info test/*.erl
+
+
