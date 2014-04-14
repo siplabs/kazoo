@@ -138,6 +138,10 @@ handle_cast({'execute_job'}, #state{job_id=JobId, queue_name=Q, job=JObj, pool=P
             release_pending_job(Result),
             gen_server:cast(Pid, {'job_complete', self()}),
             {'noreply', reset(State)};
+        {'failed', Error, Result} ->
+            release_failed_job(Error, Result),
+            gen_server:cast(Pid, {'job_complete', self()}),
+            {'noreply', reset(State)};
         {'failure', Error, Result} ->
             release_failed_job(Error, Result),
             gen_server:cast(Pid, {'job_complete', self()}),

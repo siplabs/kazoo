@@ -145,9 +145,9 @@ handle_cast(_Msg, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info({'fetch', 'chatplan', _Tag, _Key, _Value, FSId, ['undefined' | FSData] }, #state{node=Node}=State) ->
-    lager:info("CHAT PLAN ~p",[FSData]),
-    lager:info("CHAT PLAN ~p",[props:get_value(<<"Event-Name">>, FSData)]),
-    lager:info("CHAT PLAN ~p",[props:get_value(<<"Caller-Context">>, FSData)]),
+%    lager:info("CHAT PLAN ~p",[FSData]),
+%    lager:info("CHAT PLAN ~p",[props:get_value(<<"Event-Name">>, FSData)]),
+%    lager:info("CHAT PLAN ~p",[props:get_value(<<"Caller-Context">>, FSData)]),
     case {props:get_value(<<"Event-Name">>, FSData)
           ,props:get_value(<<"context">>, FSData)
          }
@@ -238,7 +238,6 @@ get_caller_id(CID, From) ->
 -spec handle_sms_forward(wh_json:object(), wh_proplist()) -> no_return().
 handle_sms_forward(JObj, Props) ->
     _ = wh_util:put_callid(JObj),
-    lager:info("process_message received SIP/SIMPLE Msg : ~p", [Props]),
     lager:info("process_message received SIP/SIMPLE Msg : ~p", [JObj]),
     Node = props:get_value('node', Props),
     From = wh_json:get_value(<<"From">>, JObj),
@@ -250,11 +249,11 @@ handle_sms_forward(JObj, Props) ->
     Port = wh_json:get_value(<<"Contact-Port">>, JObj),
     Username = wh_json:get_value(<<"Contact-Username">>, JObj),
     [ContactUser, ContactRealm] = binary:split(Contact , <<"@">>),
-    lager:info("Contact Parts ~p / ~p",[ContactUser, ContactRealm]),
+ %   lager:info("Contact Parts ~p / ~p",[ContactUser, ContactRealm]),
     [FromUser, FromRealm] = binary:split(From , <<"@">>),
-    lager:info("From Parts ~p / ~p",[FromUser, FromRealm]),
+ %   lager:info("From Parts ~p / ~p",[FromUser, FromRealm]),
     [ToUser, ToRealm] = binary:split(To , <<"@">>),
-    lager:info("To Parts ~p / ~p",[ToUser, ToRealm]),
+ %   lager:info("To Parts ~p / ~p",[ToUser, ToRealm]),
     Target = get_target(To, Username),
     CallerID = get_caller_id(CIDNumber, From),
     CallerIDFull = <<"<sip:", CallerID/binary, ">">>,
@@ -273,7 +272,7 @@ handle_sms_forward(JObj, Props) ->
               ,{"type", "text/plain"}
               ,{"body", Body}
             ],
-    lager:info("SENDING ~p",[Header2]),
+%    lager:info("SENDING ~p",[Header2]),
 %            Resp = freeswitch:sendevent(Node, 'SEND_MESSAGE', Header),
             Resp = freeswitch:sendevent_custom(Node, 'SMS::SEND_MESSAGE', Header2),
             lager:info("sent SIP/SIMPLE Msg to '~s' via ~s: ~p", [To, Node, Resp]).
@@ -326,7 +325,7 @@ reply_affirmative(Node, FetchId, Props) ->
 -spec process_route_req(atom(), ne_binary(), wh_proplist()) -> 'ok'.
 process_route_req(Node, FetchId, Props) ->
     put('callid', FetchId),
-    props:to_log(Props,<<"CHAT PROPS">>),
+%    props:to_log(Props,<<"CHAT PROPS">>),
     CallId = props:get_value(<<"Core-UUID">>, Props),
     reply_affirmative(Node, FetchId, Props),
     Props1 = ecallmgr_fs_trusted:pre_process_routes(Node, FetchId, CallId , Props),
