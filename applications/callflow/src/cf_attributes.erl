@@ -63,18 +63,20 @@ groups(Call, ViewOptions) ->
 %% @end
 %%-----------------------------------------------------------------------------
 -spec group_membership(whapps_call:call()) -> wh_json:objects().
--spec group_membership(whapps_call:call(), ne_binary()) -> wh_json:objects().
+-spec group_membership(whapps_call:call(), ne_binary() | ne_binaries()) -> wh_json:objects().
 group_membership(Call) ->
     group_membership(Call, whapps_call:authorizing_id(Call)).
-group_membership(Call, EndpointId) ->
-    ViewOptions = [{'key', EndpointId}],
+group_membership(Call, EndpointIds) when is_list(EndpointIds) ->
+    ViewOptions = [{'keys', EndpointIds}],
     AccountDb = whapps_call:account_db(Call),
     case couch_mgr:get_results(AccountDb, <<"cf_attributes/group_members">>, ViewOptions) of
         {'ok', JObjs} -> JObjs;
         {'error', _} = _Err ->
             lager:info("Can't explore group membership: ~p", [_Err]),
             []
-    end.
+    end;
+group_membership(Call, EndpointId) ->
+    group_membership(Call, [EndpointId]).
 
 %%-----------------------------------------------------------------------------
 %% @public

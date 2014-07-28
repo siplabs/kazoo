@@ -32,10 +32,8 @@ handle(_, Call) ->
                      wh_json:get_value(<<"owner_id">>, JObj);
                  <<"user">> -> AuthId
              end,
-    UsersGroups = lists:sort(get_group_ids(Call, UserId)),
     Devices = cf_util:find_user_endpoints(UserId, [], Call),
-    DevicesGroups = lists:sort(lists:flatten([get_group_ids(Call, Dev) || Dev <- Devices])),
-    AllGroups = lists:merge(UsersGroups, DevicesGroups),
+    AllGroups = get_group_ids(Call, [UserId | Devices]),
     Endpoints = lists:flatten([cf_util:find_group_endpoints(GroupId, Call) || GroupId <- AllGroups]),
     Usernames = [get_sipname_by_id(Id, Call) || Id <- Endpoints],
     Channels = [Channel || Channel <-cf_util:find_channels(Usernames, Call),
@@ -70,6 +68,6 @@ no_channels_ringing(Call) ->
     whapps_call_command:answer(Call),
     whapps_call_command:b_prompt(<<"pickup_any_group-no_channels">>, Call).
 
--spec get_group_ids(whapps_call:call(), ne_binary()) -> [ne_binary()].
-get_group_ids(Call, MemberId) ->
-    [wh_json:get_value(<<"id">>, GroupJObj)|| GroupJObj <- cf_attributes:group_membership(Call, MemberId)].
+-spec get_group_ids(whapps_call:call(), [ne_binary()])-> [ne_binary()].
+get_group_ids(Call, MemberIds) ->
+    [wh_json:get_value(<<"id">>, GroupJObj)|| GroupJObj <- cf_attributes:group_membership(Call, MemberIds)].
