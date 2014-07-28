@@ -2,6 +2,8 @@
 %%% @copyright (C) 2011-2013, 2600Hz Inc
 %%% @doc
 %%%
+%%% Intercept random call from any group which caller belongs to
+%%%
 %%% @end
 %%%
 %%% @contributors
