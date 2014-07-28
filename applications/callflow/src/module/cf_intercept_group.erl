@@ -7,7 +7,7 @@
 %%% @contributors
 %%%   SIPLABS LLC (Maksim Krzhemenevskiy)
 %%%-------------------------------------------------------------------
--module(cf_pickup_any_group).
+-module(cf_intercept_group).
 
 -include("../callflow.hrl").
 
