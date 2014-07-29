@@ -2,7 +2,7 @@
 %%% @copyright (C) 2011-2013, 2600Hz Inc
 %%% @doc
 %%%
-%%% Intercept random call from any group which caller belongs to
+%%% Intercept earliest call from any group which caller belongs to
 %%%
 %%% @end
 %%%
@@ -44,7 +44,7 @@ handle(_, Call) ->
     ChannelsCount = lists:flatlength(Channels),
     case ChannelsCount > 0 of
         'true' ->
-            Channel = lists:nth(random:uniform(ChannelsCount + 1), Channels),
+            Channel = get_earliest_channel(Channels),
             UUID = wh_json:get_value(<<"other_leg">>, Channel),
             lager:info("Pickup a ~s", [UUID]),
             {'ok', Ev} = whapps_call_command:b_pickup(UUID, Call),
@@ -57,6 +57,19 @@ handle(_, Call) ->
             lager:info("Nothing to pickup")
     end,
     cf_exe:stop(Call).
+
+-spec get_earliest_channel(wh_json:objects()) -> wh_json:object().
+get_earliest_channel([Channel]) ->
+    Channel;
+get_earliest_channel([Channel | Channels]) ->
+    lists:foldl(fun (Chan, Acc) ->
+                    T1 = wh_json:get_value(<<"timestamp">>, Chan),
+                    T2 = wh_json:get_value(<<"timestamp">>, Acc),
+                    case T1 < T2 of
+                        'true' -> Chan;
+                        'false' -> Acc
+                    end
+    end, Channel, Channels).
 
 -spec get_sipname_by_id(ne_binary(), whapps_call:call()) -> ne_binary().
 get_sipname_by_id(EndpointId, Call) ->
