@@ -26,6 +26,7 @@
                          ,'camper'
                          ,'frontier'
                          ,'doodle'
+                         ,'circlemaker'
                         ]).
 
 -define(WHISTLE_APPS_HRL, 'true').
