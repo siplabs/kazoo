@@ -647,7 +647,7 @@ publish_shared_member_call(AcctId, QueueId, JObj, ContentType) ->
                                     ,{'mandatory', 'true'}
                                    ]),
     {'ok', Payload} = wh_api:prepare_api_payload(JObj, ?MEMBER_CALL_VALUES, fun member_call/1),
-    amqp_util:targeted_publish(shared_queue_name(AcctId, QueueId), Payload, ContentType, [Props]).
+    amqp_util:targeted_publish(shared_queue_name(AcctId, QueueId), Payload, ContentType, Props).
 
 -spec publish_member_call_failure(ne_binary(), api_terms()) -> 'ok'.
 -spec publish_member_call_failure(ne_binary(), api_terms(), ne_binary()) -> 'ok'.
