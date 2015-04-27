@@ -229,6 +229,10 @@ refresh(?KZ_CCCPS_DB) ->
     _ = couch_mgr:revise_doc_from_file(?KZ_CCCPS_DB, 'crossbar', <<"views/cccps.json">>),
     _ = couch_mgr:revise_doc_from_file(?KZ_CCCPS_DB, 'cccp', <<"views/blocking.json">>),
     'ok';
+refresh(?WH_AAA_DICTS_DB) ->
+    couch_mgr:db_create(?WH_AAA_DICTS_DB),
+    _ = couch_mgr:revise_doc_from_file(?WH_AAA_DICTS_DB, 'circlemaker', <<"views/aaa.json">>),
+    'ok';
 refresh(?KZ_TOKEN_DB) ->
     _ = couch_mgr:db_create(?KZ_TOKEN_DB),
     couch_mgr:revise_doc_from_file(?KZ_TOKEN_DB, 'crossbar', "views/token_auth.json"),
