@@ -632,6 +632,9 @@ publish_member_call_cancel(API, ContentType) ->
     {'ok', Payload} = wh_api:prepare_api_payload(API, ?MEMBER_CALL_CANCEL_VALUES, fun member_call_cancel/1),
     amqp_util:callmgr_publish(Payload, ContentType, member_call_routing_key(API)).
 
+-spec publish_shared_member_call(wh_json:object()) -> 'ok'.
+-spec publish_shared_member_call(ne_binary(), ne_binary(), api_terms()) -> 'ok'.
+-spec publish_shared_member_call(ne_binary(), ne_binary(), api_terms(), ne_binary()) -> 'ok'.
 publish_shared_member_call(JObj) ->
     publish_shared_member_call(wh_json:get_value(<<"Account-ID">>, JObj)
                                ,wh_json:get_value(<<"Queue-ID">>, JObj)
