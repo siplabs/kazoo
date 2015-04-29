@@ -9,12 +9,13 @@
 %%% @contributors
 %%%   Karl Anderson
 %%%   James Aimonetti
+%%%   SIPLABS, LLC (Ilya Ashchepkov)
 %%%-------------------------------------------------------------------
 -module(cb_users_v2).
 
 -export([create_user/1]).
 -export([init/0
-         ,allowed_methods/0, allowed_methods/1, allowed_methods/3
+         ,allowed_methods/0, allowed_methods/1, allowed_methods/2, allowed_methods/3
          ,resource_exists/0, resource_exists/1, resource_exists/3
          ,validate_resource/1, validate_resource/2, validate_resource/3, validate_resource/4
          ,billing/1
@@ -22,7 +23,7 @@
          ,authorize/1
          ,validate/1, validate/2, validate/4
          ,put/1
-         ,post/2
+         ,post/2, post/3
          ,delete/2
          ,patch/2
         ]).
@@ -33,6 +34,7 @@
 -define(CB_LIST, <<"users/crossbar_listing">>).
 -define(LIST_BY_USERNAME, <<"users/list_by_username">>).
 -define(LIST_BY_PRESENCE_ID, <<"devices/listing_by_presence_id">>).
+-define(PHOTO, <<"photo">>).
 
 %%%===================================================================
 %%% API
@@ -79,6 +81,9 @@ allowed_methods() ->
 
 allowed_methods(_) ->
     [?HTTP_GET, ?HTTP_POST, ?HTTP_DELETE, ?HTTP_PATCH].
+
+allowed_methods(_, ?PHOTO) ->
+    [?HTTP_POST].
 
 allowed_methods(_, ?QUICKCALL_PATH_TOKEN, _) ->
     [?HTTP_GET].
@@ -201,6 +206,7 @@ validate_user_id(UserId, Context, Doc) ->
 %%--------------------------------------------------------------------
 -spec validate(cb_context:context()) -> cb_context:context().
 -spec validate(cb_context:context(), path_token()) -> cb_context:context().
+-spec validate(cb_context:context(), path_token(), path_token(), path_token()) -> cb_context:context().
 
 validate(Context) ->
     validate_users(Context, cb_context:req_verb(Context)).
@@ -240,6 +246,15 @@ post(Context, _) ->
             Context1;
         _ -> Context1
     end.
+
+-spec post(cb_context:context(), ne_binary(), path_token()) -> cb_context:context().
+post(Context, UserId, ?PHOTO) ->
+    [{_FileName, FileObj}] = cb_context:req_files(Context),
+    Headers = wh_json:get_value(<<"headers">>, FileObj),
+    CT = wh_json:get_value(<<"content_type">>, Headers),
+    Content = wh_json:get_value(<<"contents">>, FileObj),
+    Opts = [{'headers', [{'content_type', wh_util:to_list(CT)}]}],
+    crossbar_doc:save_attachment(UserId, ?PHOTO, Content, Context, Opts).
 
 -spec put(cb_context:context()) -> cb_context:context().
 put(Context) ->
