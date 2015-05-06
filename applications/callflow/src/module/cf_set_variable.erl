@@ -34,7 +34,9 @@ handle(Data, Call) ->
     Name = props:get_value(wh_json:get_value(<<"variable">>, Data), name_mapping()),
     Channel = wh_json:get_value(<<"channel">>, Data, <<"a">>),
     set_variable(Name, Value, Channel, Call),
-    cf_exe:continue(Call).
+    Call1 = whapps_call:insert_custom_channel_var(Name, Value, Call),
+    cf_exe:set_call(Call1),
+    cf_exe:continue(Call1).
 
 -spec set_variable(api_binary(), api_binary(), ne_binary(), whapps_call:call()) -> 'ok'.
 set_variable('undefined', _Value, _Channel, _Call) ->
