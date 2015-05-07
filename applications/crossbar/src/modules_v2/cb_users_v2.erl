@@ -688,11 +688,7 @@ set_photo(JObj, Context) ->
         'error' -> JObj;
         'success' ->
             Data = cb_context:resp_data(Attach),
-            CT = wh_json:get_value(<<"content_type">>
-                                   ,wh_json:get_value(?PHOTO
-                                                      ,wh_json:get_value(<<"_attachments">>
-                                                                         ,cb_context:doc(Context)
-                                                                        ))),
+            CT = wh_doc:attachment_content_type(cb_context:doc(Context), ?PHOTO),
             wh_json:set_value(?PHOTO, wh_json:from_list([{CT, Data}]), JObj)
     end.
 
