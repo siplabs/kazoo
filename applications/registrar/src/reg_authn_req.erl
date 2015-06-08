@@ -12,6 +12,7 @@
 -export([init/0
          ,handle_req/2
          ,lookup_account_by_ip/1
+         ,send_auth_resp/2, send_auth_error/1
         ]).
 
 -include("reg.hrl").
@@ -27,19 +28,30 @@ init() -> 'ok'.
 
 -spec handle_req(wh_json:object(), wh_proplist()) -> 'ok'.
 handle_req(JObj, _Props) ->
+    lager:debug([{'trace', 'true'}], "JObj=~p~n_Props=~p~n", [JObj, _Props]),
     'true' = wapi_authn:req_v(JObj),
     _ = wh_util:put_callid(JObj),
-    Username = get_auth_user(JObj),
-    Realm = wapi_authn:get_auth_realm(JObj),
-    lager:debug("trying to authenticate ~s@~s", [Username, Realm]),
-    case lookup_auth_user(Username, Realm, JObj) of
-        {'ok', #auth_user{}=AuthUser} ->
-            send_auth_resp(AuthUser, JObj);
-        {'error', _R} ->
-            lager:notice("auth failure for ~s@~s: ~p"
-                         ,[Username, Realm, _R]
-                        ),
-            send_auth_error(JObj)
+    Realm = wh_json:get_value(<<"Auth-Realm">>, JObj, <<"missing.realm">>),
+    case wh_network_utils:is_ipv4(Realm)
+        orelse wh_network_utils:is_ipv6(Realm)
+    of
+        'true' ->
+            lager:debug("realm is an IP address (~s) : skipping", [Realm]);
+        'false' ->
+            Username = wapi_authn:get_auth_user(JObj),
+            lager:debug("trying to authenticate ~s@~s", [Username, Realm]),
+            case lookup_auth_user(Username, Realm, JObj) of
+                {'pending', #auth_user{}=_AuthUser} ->
+                    % wait for response from circlemaker processed in reg_aaa_resp module
+                    'ok';
+                {'ok', #auth_user{}=AuthUser} ->
+                    send_auth_resp(AuthUser, JObj);
+                {'error', _R} ->
+                    lager:notice("auth failure for ~s@~s: ~p"
+                                ,[Username, Realm, _R]
+                                ),
+                    send_auth_error(JObj)
+            end
     end.
 
 -spec get_auth_user(wh_json:object()) -> ne_binary().
@@ -200,6 +212,7 @@ get_tel_uri(Number) -> <<"<tel:", Number/binary,">">>.
                               {'ok', auth_user()} |
                               {'error', _}.
 lookup_auth_user(Username, Realm, Req) ->
+    lager:debug([{'trace', 'true'}], "Username=~p~nRealm=~p~nReq=~p~n", [Username, Realm, Req]),
     case get_auth_user(Username, Realm) of
         {'error', _}=E -> E;
         {'ok', JObj} -> check_auth_user(JObj, Username, Realm, Req)
@@ -209,6 +222,7 @@ lookup_auth_user(Username, Realm, Req) ->
                            {'ok', wh_json:object()} |
                            {'error', 'not_found'}.
 get_auth_user(Username, Realm) ->
+    lager:debug([{'trace', 'true'}], "Username=~p~nRealm=~p~n", [Username, Realm]),
     case whapps_util:get_account_by_realm(Realm) of
         {'error', E} ->
             lager:debug("failed to lookup realm ~s in accounts: ~p", [Realm, E]),
@@ -251,6 +265,7 @@ get_auth_user_in_agg(Username, Realm) ->
                                       {'ok', wh_json:object()} |
                                       {'error', 'not_found'}.
 get_auth_user_in_account(Username, Realm, AccountDB) ->
+    lager:debug([{'trace', 'true'}], "Username=~p~nRealm=~p~nAccountDB=~p~n", [Username, Realm, AccountDB]),
     ViewOptions = [{'key', Username}
                    ,'include_docs'
                   ],
@@ -328,6 +343,7 @@ account_ccvs_from_ip_auth(Doc) ->
                              {'ok', auth_user()} |
                              {'error', _}.
 check_auth_user(JObj, Username, Realm, Req) ->
+    lager:debug([{'trace', 'true'}], "JObj=~p~nUsername=~p~nRealm=~p~nReq=~p~n", [JObj, Username, Realm, Req]),
     case is_account_enabled(JObj)
         andalso maybe_auth_type_enabled(JObj)
         andalso maybe_owner_enabled(JObj)
@@ -394,6 +410,7 @@ is_owner_enabled(AccountDb, OwnerId) ->
                                {'ok', auth_user()} |
                                {'error', any()}.
 jobj_to_auth_user(JObj, Username, Realm, Req) ->
+    lager:debug([{'trace', 'true'}], "JObj=~p~nUsername=~p~nRealm=~p~nReq=~p~n", [JObj, Username, Realm, Req]),
     AuthValue = get_auth_value(JObj),
     AuthDoc = wh_json:get_value(<<"doc">>, JObj),
     Method = get_auth_method(AuthDoc),
@@ -454,6 +471,7 @@ get_auth_method(JObj) ->
                                {'ok', auth_user()} |
                                {'error', any()}.
 maybe_auth_method(AuthUser, JObj, Req, ?GSM_ANY_METHOD)->
+    lager:debug([{'trace', 'true'}], "AuthUser=~p~n", [AuthUser]),
     GsmDoc = wh_json:get_value(<<"gsm">>, JObj),
     CachedNonce = wh_json:get_value(<<"nonce">>, GsmDoc, wh_util:rand_hex_binary(16)),
     Nonce = remove_dashes(
@@ -478,7 +496,14 @@ maybe_auth_method(AuthUser, JObj, Req, ?GSM_ANY_METHOD)->
                            }
        )
      );
-maybe_auth_method(AuthUser, _JObj, _Req, ?ANY_AUTH_METHOD)->
+maybe_auth_method(AuthUser, _JObj, _Req, ?AAA_AUTH_METHOD)->
+    lager:debug([{'trace', 'true'}], "AuthUser=~p~n", [AuthUser]),
+    % do the authentication via circlemaker
+    reg_aaa_resp:send_aaa_request({'authn', AuthUser}),
+    % waiting for respose in the aaa_listener module
+    {'pending', AuthUser};
+maybe_auth_method(AuthUser, JObj, Req, ?ANY_AUTH_METHOD)->
+    lager:debug([{'trace', 'true'}], "AuthUser=~p~nJObj=~p~nReq=~p~n", [AuthUser, JObj, Req]),
     {'ok', AuthUser}.
 
 -define(GSM_PRE_REGISTER_ROUTINES, [fun maybe_msisdn/1]).
