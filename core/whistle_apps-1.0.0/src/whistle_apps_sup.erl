@@ -25,6 +25,7 @@
                    ,?WORKER('wh_cache')
                    ,?WORKER('whistle_apps_init')
                    ,?WORKER('whapps_controller')
+                   ,?WORKER('wh_authz_listener')
                    ,?SUPER('whistle_services_sup')
                    ,?SUPER('whistle_number_manager_sup')
                   ]).
