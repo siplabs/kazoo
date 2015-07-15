@@ -1207,8 +1207,25 @@ generate_sip_headers(Endpoint, Acc, Call) ->
     HeaderFuns = [fun maybe_add_sip_headers/1
                   ,fun(J) -> maybe_add_alert_info(J, Endpoint, Inception) end
                   ,fun(J) -> maybe_add_aor(J, Call) end
+                  ,fun(J) -> maybe_add_diversion(J, Call, Inception, Endpoint) end
                  ],
     lists:foldr(fun(F, JObj) -> F(JObj) end, Acc, HeaderFuns).
+
+-spec maybe_add_diversion(wh_json:object(), whapps_call:call(), api_binary(), wh_json:object()) -> wh_json:object().
+maybe_add_diversion(JObj, Call, Inception, Endpoint) ->
+    AuthId = whapps_call:authorizing_id(Call),
+
+    case AuthId of
+        'undefined' ->
+            case wh_json:is_true([<<"call_forward">>, <<"keep_caller_id">>], Endpoint, 'false') of
+                'true' ->
+                    Diversion = list_to_binary(["<sip:", Inception, ">", ";reason=unkown"]),
+                    lager:info("Set diversion as ~s", [Diversion]),
+                    wh_json:set_value(<<"Diversions">>, [Diversion], JObj);
+                'false' -> JObj
+            end;
+        _Else -> JObj
+    end.
 
 -spec maybe_add_sip_headers(wh_json:object()) -> wh_json:object().
 maybe_add_sip_headers(JObj) ->
