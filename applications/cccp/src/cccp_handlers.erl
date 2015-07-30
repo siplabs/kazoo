@@ -18,6 +18,7 @@
 -spec handle_route_req(wh_json:object(), wh_proplist()) -> any().
 handle_route_req(JObj, Props) ->
     'true' = wapi_route:req_v(JObj),
+    lager:info("CCCP has received a route req, shold we handle the call?"),
 
     Call = whapps_call:from_route_req(JObj),
     CB_Number = wnm_util:normalize_number(whapps_config:get(?CCCP_CONFIG_CAT, <<"cccp_cb_number">>)),
@@ -31,6 +32,7 @@ handle_route_req(JObj, Props) ->
 
 -spec park_call(wh_json:object(), wh_proplist(), whapps_call:call()) -> 'ok'.
 park_call(JObj, Props, Call) ->
+    lager:info("Let's park it!"),
     Q = props:get_value('queue', Props),
     Resp = props:filter_undefined([{<<"Msg-ID">>, wh_json:get_value(<<"Msg-ID">>, JObj)}
                                    ,{<<"Method">>, <<"park">>}
@@ -43,8 +45,8 @@ park_call(JObj, Props, Call) ->
 
 -spec handle_route_win(wh_json:object(), wh_proplist()) -> 'ok'.
 handle_route_win(JObj, Props) ->
-    lager:info("CCCP has received a route win, taking control of the call"),
     'true' = wapi_route:win_v(JObj),
+    lager:info("CCCP has received a route win, taking control of the call"),
     CallId = wh_json:get_value(<<"Call-ID">>, JObj),
     case whapps_call:retrieve(CallId, ?APP_NAME) of
         {'ok', Call} ->
