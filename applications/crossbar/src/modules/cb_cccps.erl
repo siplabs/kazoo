@@ -43,17 +43,17 @@ init() ->
 
 -spec maybe_init_db() -> 'ok'.
 maybe_init_db() ->
-    case couch_mgr:db_exists(<<"cccps">>) of
+    case couch_mgr:db_exists(?KZ_CCCPS_DB) of
         'true' -> 
-             _ = couch_mgr:revise_doc_from_file(<<"cccps">>, 'crossbar', <<"views/cccps.json">>),
+             _ = couch_mgr:revise_doc_from_file(?KZ_CCCPS_DB, 'crossbar', <<"views/cccps.json">>),
             'ok';
         'false' -> init_db()
     end.
 
 -spec init_db() -> 'ok'.
 init_db() ->
-    couch_mgr:db_create(<<"cccps">>),
-    _ = couch_mgr:revise_doc_from_file(<<"cccps">>, 'crossbar', <<"views/cccps.json">>),
+    couch_mgr:db_create(?KZ_CCCPS_DB),
+    _ = couch_mgr:revise_doc_from_file(?KZ_CCCPS_DB, 'crossbar', <<"views/cccps.json">>),
     'ok'.
 
 %%--------------------------------------------------------------------
@@ -129,7 +129,7 @@ validate_cccp(Context, Id, ?HTTP_DELETE) ->
 -spec put(cb_context:context()) -> cb_context:context().
 put(Context) ->
     Context2 = crossbar_doc:save(Context),
-    couch_mgr:ensure_saved(<<"cccps">>, cb_context:doc(Context2)),
+    couch_mgr:ensure_saved(?KZ_CCCPS_DB, cb_context:doc(Context2)),
     Context2.
 
 %%--------------------------------------------------------------------
@@ -142,7 +142,7 @@ put(Context) ->
 -spec post(cb_context:context(), path_token()) -> cb_context:context().
 post(Context, _) ->
     Context2 = crossbar_doc:save(Context),
-    couch_mgr:ensure_saved(<<"cccps">>, cb_context:doc(Context2)),
+    couch_mgr:ensure_saved(?KZ_CCCPS_DB, cb_context:doc(Context2)),
     Context2.
 
 %%--------------------------------------------------------------------
