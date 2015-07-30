@@ -146,7 +146,7 @@ verify_entered_number(EnteredNumber, Call) ->
 get_last_dialed_number(Call) ->
     {'ok', CachedCall} = whapps_call:retrieve(whapps_call:call_id(Call), ?APP_NAME),
     DocId = whapps_call:kvs_fetch('auth_doc_id', CachedCall),
-    {'ok', Doc} = couch_mgr:open_doc(<<"cccps">>, DocId),
+    {'ok', Doc} = couch_mgr:open_doc(?KZ_CCCPS_DB, DocId),
     LastDialed = wh_json:get_value(<<"pvt_last_dialed">>, Doc),
     case cccp_allowed_callee(LastDialed) of
        'false' ->
@@ -158,7 +158,7 @@ get_last_dialed_number(Call) ->
 
 -spec store_last_dialed(ne_binary(), ne_binary()) -> 'ok'.
 store_last_dialed(Number, DocId) ->
-    {'ok', Doc} = couch_mgr:update_doc(<<"cccps">>, DocId, [{<<"pvt_last_dialed">>, Number}]),
+    {'ok', Doc} = couch_mgr:update_doc(?KZ_CCCPS_DB, DocId, [{<<"pvt_last_dialed">>, Number}]),
     _ = couch_mgr:update_doc(wh_json:get_value(<<"pvt_account_db">>, Doc), DocId, [{<<"pvt_last_dialed">>, Number}]),
     'ok'.
 
@@ -168,7 +168,7 @@ store_last_dialed(Number, DocId) ->
 check_restrictions(Number, Call) ->
     {'ok', CachedCall} = whapps_call:retrieve(whapps_call:call_id(Call), ?APP_NAME),
     DocId = whapps_call:kvs_fetch('auth_doc_id', CachedCall),
-    {'ok', Doc} = couch_mgr:open_doc(<<"cccps">>, DocId),
+    {'ok', Doc} = couch_mgr:open_doc(?KZ_CCCPS_DB, DocId),
     AccountId = wh_json:get_value(<<"pvt_account_id">>, Doc),
     AccountDb = wh_json:get_value(<<"pvt_account_db">>, Doc),
     case is_number_restricted(Number, AccountId, AccountDb) of
