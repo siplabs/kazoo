@@ -34,6 +34,7 @@
                }).
 -type state() :: #state{}.
 
+-define(NTRIES, whapps_config:get(?CCCP_CONFIG_CAT, <<"tries_count">>, 3)).
 
 %% By convention, we put the options here in macros, but not required.
 -define(BINDINGS, [{'self', []}]).
@@ -208,11 +209,11 @@ dial(AccountId, OutboundCID, AuthDocId, Call) ->
 
 -spec pin_collect(whapps_call:call()) -> 'ok'.
 pin_collect(Call) ->
-    pin_collect(Call, 3).
-pin_collect(Call, 0) ->
+    pin_collect(Call, ?NTRIES).
+pin_collect(Call, Retries) when Retries =< 0 ->
     whapps_call_command:hangup(Call);
 pin_collect(Call, Retries) ->
-    case whapps_call_command:b_prompt_and_collect_digits(9, 12, <<"disa-enter_pin">>, 3, Call) of
+    case whapps_call_command:b_prompt_and_collect_digits(9, 12, <<"disa-enter_pin">>, 1, Call) of
         {'ok', <<>>} ->
             whapps_call_command:b_prompt(<<"disa-invalid_pin">>, Call),
             pin_collect(Call, Retries - 1);
