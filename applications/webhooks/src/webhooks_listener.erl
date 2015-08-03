@@ -85,7 +85,7 @@ handle_config(JObj, Srv, <<"doc_edited">>) ->
     case wapi_conf:get_id(JObj) of
         'undefined' -> find_and_update_hook(JObj, Srv);
         HookId ->
-            {'ok', Hook} = couch_mgr:open_cache_doc(?KZ_WEBHOOKS_DB, HookId),
+            {'ok', Hook} = couch_mgr:open_doc(?KZ_WEBHOOKS_DB, HookId),
             case wh_json:is_true(<<"enabled">>, Hook, 'true') of
                 'true' ->
                     gen_listener:cast(Srv, {'update_hook', webhooks_util:jobj_to_rec(Hook)});
