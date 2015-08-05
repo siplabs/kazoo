@@ -242,6 +242,21 @@
       "name": "SMTP Address",
       "description": "custom smtp address"
     },
+    "media": {
+      "default": {},
+      "description": "The device media parameters",
+      "name": "Media Parameters",
+      "properties": {
+        "fax_option": {
+          "description": "Support T.38",
+          "name": "Is T.38 Supported?",
+          "required": false,
+          "type": "boolean"
+        }
+      }
+      "required": false,
+      "type": "object"
+    },
     "smtp_permission_list": {
       "type": "array",
       "required": false,
