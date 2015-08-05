@@ -191,7 +191,7 @@ code_change(_OldVsn, State, _Extra) ->
 process_call_to_platform(Call) ->
     whapps_call_command:answer(Call),
     CID = wnm_util:normalize_number(whapps_call:caller_id_number(Call)),
-    case cccp_util:authorize(CID, <<"cccps/cid_listing">>) of
+    case cccp_util:authorize(CID, cccp_util:cid_listing()) of
         [AccountId, OutboundCID, AuthDocId] ->
             dial(AccountId, OutboundCID, AuthDocId, Call);
         _ ->
@@ -227,7 +227,7 @@ pin_collect(Call, Retries) ->
 
 -spec handle_entered_pin(whapps_call:call(), integer(), ne_binary()) -> 'ok'.
 handle_entered_pin(Call, Retries, EnteredPin) ->
-    case cccp_util:authorize(EnteredPin, <<"cccps/pin_listing">>) of
+    case cccp_util:authorize(EnteredPin, cccp_util:pin_listing()) of
         [AccountId, OutboundCID, AuthDocId] ->
             dial(AccountId, OutboundCID, AuthDocId, Call);
         _ ->

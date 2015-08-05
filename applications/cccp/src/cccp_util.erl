@@ -14,11 +14,21 @@
          ,get_number/1
          ,store_last_dialed/2
          ,build_bridge_request/6
+         ,cid_listing/0
+         ,pin_listing/0
         ]).
 
 -include("cccp.hrl").
 
 -define(DEFAULT_CALLEE_REGEX, <<"^\\+?\\d{7,}$">>).
+
+-spec cid_listing() -> ne_binary().
+cid_listing() ->
+    <<"cccps/cid_listing">>.
+
+-spec pin_listing() -> ne_binary().
+pin_listing() ->
+    <<"cccps/pin_listing">>.
 
 -spec relay_amqp(wh_json:object(), wh_proplist()) -> 'ok'.
 relay_amqp(JObj, _Props) ->
