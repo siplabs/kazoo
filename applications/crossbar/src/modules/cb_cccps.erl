@@ -238,7 +238,7 @@ normalize_view_results(JObj, Acc) ->
 -spec check_pin(cb_context:context()) -> cb_context:context().
 check_pin(Context) ->
     case unique_pin(Context) of
-        'empty' -> create(Context);
+        {'error', 'empty'} -> create(Context);
         _ ->
             cb_context:add_validation_error(
                 <<"cccp">>
@@ -269,7 +269,7 @@ check_cid(Context) ->
             ReqData2 = wh_json:set_value(<<"cid">>, wnm_util:normalize_number(CID), ReqData),
             Context2 = cb_context:set_req_data(Context, ReqData2),
             case unique_cid(Context2) of
-                'empty' -> create(Context2);
+                {'error', 'empty'} -> create(Context2);
                 _ ->
                     cb_context:add_validation_error(
                         <<"cccp">>
@@ -283,12 +283,12 @@ check_cid(Context) ->
             end
 
     end.
--spec unique_cid(cb_context:context()) -> {'ok', list()} | 'empty' | 'error'.
+-spec unique_cid(cb_context:context()) -> cccp_auth:cccp_auth_ret().
 unique_cid(Context) ->
     CID = wh_json:get_value(<<"cid">>, cb_context:req_data(Context)),
-    cccp_util:authorize(CID, <<"cccps/cid_listing">>).
+    cccp_auth:authorize(CID, <<"cccps/cid_listing">>).
 
--spec unique_pin(cb_context:context()) -> {'ok', list()} | 'empty' | 'error'.
+-spec unique_pin(cb_context:context()) -> cccp_auth:cccp_auth_ret().
 unique_pin(Context) ->
     Pin = wh_json:get_value(<<"pin">>, cb_context:req_data(Context)),
-    cccp_util:authorize(Pin, <<"cccps/pin_listing">>).
+    cccp_auth:authorize(Pin, <<"cccps/pin_listing">>).
