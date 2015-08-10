@@ -191,9 +191,9 @@ code_change(_OldVsn, State, _Extra) ->
 process_call_to_platform(Call) ->
     whapps_call_command:answer(Call),
     CID = wnm_util:normalize_number(whapps_call:caller_id_number(Call)),
-    case cccp_util:authorize(CID, cccp_util:cid_listing()) of
-        [AccountId, OutboundCID, AuthDocId] ->
-            dial(AccountId, OutboundCID, AuthDocId, Call);
+    case cccp_auth:authorize(CID, cccp_util:cid_listing()) of
+        {'ok', Auth} ->
+            dial(cccp_auth:account_id(Auth), cccp_auth:outbound_cid(Auth), cccp_auth:auth_doc_id(Auth), Call);
         _ ->
             pin_collect(Call)
     end.
@@ -227,9 +227,9 @@ pin_collect(Call, Retries) ->
 
 -spec handle_entered_pin(whapps_call:call(), integer(), ne_binary()) -> 'ok'.
 handle_entered_pin(Call, Retries, EnteredPin) ->
-    case cccp_util:authorize(EnteredPin, cccp_util:pin_listing()) of
-        [AccountId, OutboundCID, AuthDocId] ->
-            dial(AccountId, OutboundCID, AuthDocId, Call);
+    case cccp_auth:authorize(EnteredPin, cccp_util:pin_listing()) of
+        {'ok', Auth} ->
+            dial(cccp_auth:account_id(Auth), cccp_auth:outbound_cid(Auth), cccp_auth:auth_doc_id(Auth), Call);
         _ ->
             lager:info("Wrong Pin entered."),
             whapps_call_command:b_prompt(<<"disa-invalid_pin">>, Call),

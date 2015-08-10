@@ -81,12 +81,12 @@ handle_cccp_call(Call) ->
 -spec handle_callback(ne_binary(), whapps_call:call()) -> 'ok'.
 handle_callback(CallerNumber, Call) ->
     whapps_call_command:hangup(Call),
-    case cccp_util:authorize(CallerNumber, cccp_util:cid_listing()) of
-        [AccountId, OutboundCID, AuthDocId] ->
+    case cccp_auth:authorize(CallerNumber, cccp_util:cid_listing()) of
+        {'ok',Auth} ->
             JObj = wh_json:from_list([{<<"Number">>, CallerNumber}
-                                      ,{<<"Account-ID">>, AccountId}
-                                      ,{<<"Outbound-Caller-ID-Number">>, OutboundCID}
-                                      ,{<<"Auth-Doc-Id">>, AuthDocId}
+                                      ,{<<"Account-ID">>, cccp_auth:account_id(Auth)}
+                                      ,{<<"Outbound-Caller-ID-Number">>, cccp_auth:outbound_cid(Auth)}
+                                      ,{<<"Auth-Doc-Id">>, cccp_auth:auth_doc_id(Auth)}
                                      ]),
             timer:sleep(2000),
             cccp_callback_sup:new(JObj);
