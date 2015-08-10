@@ -9,7 +9,6 @@
 -module(cccp_util).
 
 -export([relay_amqp/2
-         ,authorize/2
          ,handle_disconnect/2
          ,get_number/1
          ,store_last_dialed/2
@@ -95,53 +94,6 @@ handle_disconnect_cause(JObj) ->
         UnhandledCause ->
             lager:debug("Unhandled disconnect cause: ~p", [UnhandledCause]),
             whapps_call_command:queued_hangup(Call)
-    end.
-
--spec authorize(ne_binary(), ne_binary()) ->
-                       {'ok', ne_binaries()} |
-                       'empty' |
-                       'error'.
-authorize(Value, View) ->
-    ViewOptions = [{'key', Value}],
-    case couch_mgr:get_results(?KZ_CCCPS_DB, View, ViewOptions) of
-        {'ok',[]} ->
-            lager:info("Auth by ~p failed for: ~p. No such value in Db.", [Value, View]),
-            'empty';   %%% don't change. used in cb_cccps.erl
-        {'ok', [JObj]} ->
-            AccountId = wh_json:get_value([<<"value">>,<<"account_id">>], JObj),
-            OutboundCID = wh_json:get_value([<<"value">>,<<"outbound_cid">>], JObj),
-            [AccountId
-             ,legalize_outbound_cid(OutboundCID, AccountId)
-             ,wh_json:get_value([<<"value">>,<<"id">>], JObj)
-            ];
-        _E ->
-            lager:info("Auth failed for ~p. Error occurred: ~p.", [Value, _E]),
-            'error'
-    end.
-
--spec legalize_outbound_cid(ne_binary(), ne_binary()) -> ne_binary().
-legalize_outbound_cid(OutboundCID, AccountId) ->
-    case whapps_config:get_is_true(?CCCP_CONFIG_CAT, <<"ensure_valid_caller_id">>, 'true') of
-        'true' -> ensure_valid_caller_id(OutboundCID, AccountId);
-        'false' -> OutboundCID
-    end.
-
--spec ensure_valid_caller_id(ne_binary(), ne_binary()) -> ne_binary().
-ensure_valid_caller_id(OutboundCID, AccountId) ->
-    {'ok', AccountPhoneNumbersList} =
-        couch_mgr:open_cache_doc(wh_util:format_account_id(AccountId, 'encoded')
-                                 ,?WNM_PHONE_NUMBER_DOC
-                                ),
-    case lists:member(wnm_util:normalize_number(OutboundCID)
-                      ,wh_json:get_keys(AccountPhoneNumbersList)
-                     )
-    of
-        'true' ->
-            OutboundCID;
-        'false' ->
-            DefaultCID = whapps_config:get(?CCCP_CONFIG_CAT, <<"default_caller_id_number">>, <<"00000000000">>),
-            lager:debug("OutboundCID ~p is out of account's list; changing to application's default: ~p", [OutboundCID, DefaultCID]),
-            DefaultCID
     end.
 
 -spec get_number(whapps_call:call()) ->
