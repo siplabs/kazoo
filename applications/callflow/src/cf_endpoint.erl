@@ -1212,6 +1212,8 @@ generate_sip_headers(Endpoint, Acc, Call) ->
     lists:foldr(fun(F, JObj) -> F(JObj) end, Acc, HeaderFuns).
 
 -spec maybe_add_diversion(wh_json:object(), whapps_call:call(), api_binary(), wh_json:object()) -> wh_json:object().
+maybe_add_diversion(JObj, _Call, 'undefined', _Endpoint) ->
+    JObj;
 maybe_add_diversion(JObj, Call, Inception, Endpoint) ->
     AuthId = whapps_call:authorizing_id(Call),
 
