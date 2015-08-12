@@ -10,7 +10,6 @@
 
 -export([handle_route_req/2
          ,handle_route_win/2
-         ,handle_config_change/2
         ]).
 
 -include("cccp.hrl").
@@ -57,10 +56,6 @@ handle_route_win(JObj, Props) ->
         {'error', _R} ->
             lager:debug("Unable to find call record during route_win")
     end.
-
--spec handle_config_change(wh_json:object(), wh_proplist()) -> 'ok'.
-handle_config_change(_JObj, _Props) ->
-    'ok'.
 
 %%%===================================================================
 %%% Internal functions
