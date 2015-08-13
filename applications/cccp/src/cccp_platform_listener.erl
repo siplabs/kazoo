@@ -12,6 +12,7 @@
 
 -export([start_link/1
          ,process_call_to_platform/1
+         ,send_route_win/2
         ]).
 
 -export([init/1
@@ -27,7 +28,7 @@
 
 -record(state, {call = whapps_call:new() :: whapps_call:call()
                 ,flow = wh_json:new() :: wh_json:object()
-                ,cccp_module_pid :: {pid(), reference()} | 'undefined'
+                ,relay_pid :: api_pid()
                 ,status = <<"sane">> :: ne_binary()
                 ,queue :: api_binary()
                 ,self = self() :: pid()
@@ -38,9 +39,17 @@
 -define(PLATFORM_COLLECT_TIMEOUT, whapps_config:get_integer(?CCCP_CONFIG_CAT, <<"platform_collect_timeout">>, 5000)).
 
 %% By convention, we put the options here in macros, but not required.
--define(BINDINGS, [{'self', []}]).
+-define(BINDINGS(CallId), [{'self', []}
+                           ,{'call', [{'callid', CallId}]}
+                          ]).
 
--define(RESPONDERS, []).
+-define(RESPONDERS, [{{?MODULE, 'send_route_win'}
+                      ,[{<<"dialplan">>, <<"route_resp">>}]
+                     }
+                     ,{{'cccp_util', 'relay_amqp'}
+                       ,[{<<"call_event">>, <<"*">>}]
+                      }
+                    ]).
 
 -define(QUEUE_NAME, <<>>).
 -define(QUEUE_OPTIONS, []).
@@ -50,6 +59,13 @@
 %%% API
 %%%===================================================================
 
+-spec send_route_win(wh_json:object(), wh_proplist()) -> 'ok'.
+send_route_win(JObj, Props) ->
+    'true' = wapi_route:resp_v(JObj) andalso wh_json:get_value(<<"App-Name">>, JObj) =:= <<"callflow">>,
+    Win = props:get_value('route_win', Props),
+    lager:info("Send route win!"),
+    wapi_route:publish_win(wh_json:get_value(<<"Server-ID">>, JObj), Win).
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
@@ -58,7 +74,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(Call) ->
-    gen_listener:start_link(?MODULE, [{'bindings', ?BINDINGS}
+    gen_listener:start_link(?MODULE, [{'bindings', ?BINDINGS(whapps_call:call_id(Call))}
                                       ,{'responders', ?RESPONDERS}
                                       ,{'queue_name', ?QUEUE_NAME}       % optional to include
                                       ,{'queue_options', ?QUEUE_OPTIONS} % optional to include
@@ -118,16 +134,10 @@ handle_call(_Request, _From, State) ->
 handle_cast({'gen_listener',{'created_queue',Queue}}, #state{call=Call}=State) ->
     {'noreply', State#state{call=whapps_call:set_controller_queue(Queue, Call)}};
 handle_cast({'gen_listener',{'is_consuming', 'true'}}, #state{call=Call}=State) ->
-    CallId = whapps_call:call_id(Call),
-    Srv = whapps_call:kvs_fetch('server_pid', Call),
-    gen_listener:add_binding(Srv, {'call',[{'callid', CallId}]}),
-    gen_listener:add_responder(Srv, {'cccp_util', 'relay_amqp'}, [{<<"call_event">>, <<"*">>}]),
-    gen_listener:add_responder(Srv, {'cccp_util', 'handle_disconnect'}, [{<<"call_event">>, <<"CHANNEL_EXECUTE_COMPLETE">>}]),
-    process_call_to_platform(Call),
-    {'noreply', State};
-handle_cast({'gen_listener', {'is_consuming', _IsConsuming}}, State) ->
-    {'noreply', State};
+    Pid = erlang:spawn_link(?MODULE, 'process_call_to_platform', [Call]),
+    {'noreply', State#state{relay_pid = Pid}};
 handle_cast(_Msg, State) ->
+    lager:info("Unhandled msg: ~p", [_Msg]),
     {'noreply', State}.
 
 %%--------------------------------------------------------------------
@@ -142,9 +152,7 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info('initialize', #state{call=Call}=State) ->
     CallUpdate = whapps_call:kvs_store('consumer_pid', self(), Call),
-    whapps_call:cache(CallUpdate, ?APP_NAME),
     {'noreply', State#state{call=CallUpdate}};
-
 handle_info(_Info, State) ->
     {'noreply', State}.
 
@@ -156,8 +164,25 @@ handle_info(_Info, State) ->
 %% @spec handle_event(JObj, State) -> {reply, Options}
 %% @end
 %%--------------------------------------------------------------------
-handle_event(_JObj, _State) ->
-    {'reply', []}.
+handle_event(_JObj, #state{relay_pid = Pid
+                           ,call = Call
+                          }) ->
+    Props = case kz_call_event:event_name(_JObj) of
+                <<"route_resp">> -> [{'relay_pid', Pid}
+                                     ,{'route_win', [{<<"Msg-ID">>, whapps_call:call_id(Call)}
+                                                     ,{<<"Call-ID">>, whapps_call:call_id(Call)}
+                                                     ,{<<"Control-Queue">>, whapps_call:control_queue(Call)}
+                                                     ,{<<"Custom-Channel-Vars">>, whapps_call:custom_channel_vars(Call)}
+                                                     | wh_api:default_headers(whapps_call:controller_queue(Call)
+                                                                              ,<<"dialplan">>
+                                                                              ,<<"route_win">>
+                                                                              ,?APP_NAME
+                                                                              ,?APP_VERSION
+                                                                             )
+                                                     ]}];
+        _ -> [{'relay_pid', Pid}]
+    end,
+    {'reply', Props}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -192,12 +217,12 @@ code_change(_OldVsn, State, _Extra) ->
 process_call_to_platform(Call) ->
     whapps_call_command:answer(Call),
     case authorize(Call) of
-        'fail' -> whapps_call_command:hangup(Call);
-        Auth -> dial(cccp_auth:account_id(Auth)
-                     ,cccp_auth:outbound_cid(Auth)
-                     ,cccp_auth:auth_doc_id(Auth)
-                     ,Call
-                    )
+        'fail' ->
+            lager:info("Authorization failed! Hangup."),
+            whapps_call_command:hangup(Call);
+        Auth ->
+            lager:info("Authorized! Relaying call..."),
+            relay_call(Auth, Call)
     end.
 
 -spec authorize(whapps_call:call()) -> cccp_auth:cccp_auth() | 'fail'.
@@ -267,17 +292,34 @@ pin_collect(PinPrompt, Call) ->
                                                     ,Call
                                                    ).
 
--spec dial(ne_binary(), ne_binary(), ne_binary(), whapps_call:call()) -> 'ok'.
-dial(AccountId, OutboundCID, AuthDocId, Call) ->
-    CallId = whapps_call:call_id(Call),
-    put_auth_doc_id(AuthDocId, CallId),
-    {'num_to_dial', ToDID} = cccp_util:get_number(Call),
-    _ = spawn('cccp_util', 'store_last_dialed', [ToDID, AuthDocId]),
-    Req = cccp_util:build_bridge_request(CallId, ToDID, <<>>, whapps_call:control_queue(Call), AccountId, OutboundCID),
-    wapi_offnet_resource:publish_req(Req).
+-spec relay_call(cccp_auth:cccp_auth(), whapps_call:call()) -> 'ok'.
+relay_call(Auth, Call) ->
+    RequestUser = whapps_config:get(?CCCP_CONFIG_CAT, <<"callflow_number">>, <<"cccp_handler">>),
+    NewRequest = iolist_to_binary([RequestUser, <<"@">>, whapps_call:request_realm(Call)]),
+    Call1 = whapps_call:set_account_id(cccp_auth:account_id(Auth), Call),
+    Call2 = whapps_call:set_request(NewRequest, Call1),
+    RouteReq = from_call(Call2),
+    lager:info("Publishing route req"),
+    wh_amqp_worker:cast(RouteReq, fun wapi_route:publish_req/1).
 
--spec put_auth_doc_id(ne_binary(), ne_binary()) -> 'ok'.
-put_auth_doc_id(AuthDocId, CallId) ->
-    {'ok', CachedCall} = whapps_call:retrieve(CallId, ?APP_NAME),
-    CallUpdate = whapps_call:kvs_store('auth_doc_id', AuthDocId, CachedCall),
-    whapps_call:cache(CallUpdate, ?APP_NAME).
+-spec from_call(whapps_call:call()) -> wh_proplist().
+from_call(Call) ->
+    [{<<"Msg-ID">>, whapps_call:fetch_id(Call)}
+     ,{<<"Call-ID">>, whapps_call:call_id(Call)}
+     ,{<<"Message-ID">>, wh_util:rand_hex_binary(6)}
+     ,{<<"Caller-ID-Name">>, whapps_call:caller_id_name(Call)}
+     ,{<<"Caller-ID-Number">>, whapps_call:caller_id_number(Call)}
+     ,{<<"To">>, whapps_call:to(Call)}
+     ,{<<"From">>, whapps_call:from(Call)}
+     ,{<<"Request">>, whapps_call:request(Call)}
+     ,{<<"Switch-Nodename">>, whapps_call:switch_nodename(Call)}
+     ,{<<"Switch-Hostname">>, whapps_call:switch_hostname(Call)}
+     ,{<<"Switch-URL">>, whapps_call:switch_url(Call)}
+     ,{<<"Switch-URI">>, whapps_call:switch_uri(Call)}
+     ,{<<"Custom-Channel-Vars">>, whapps_call:custom_channel_vars(Call)}
+     ,{<<"Custom-SIP-Headers">>, whapps_call:custom_sip_headers(Call)}
+     ,{<<"Resource-Type">>, whapps_call:resource_type(Call)}
+     ,{<<"To-Tag">>, whapps_call:to_tag(Call)}
+     ,{<<"From-Tag">>, whapps_call:from_tag(Call)}
+     | wh_api:default_headers(whapps_call:controller_queue(Call), ?APP_NAME, ?APP_VERSION)
+    ].
