@@ -52,15 +52,8 @@ retries_exceeded() ->
     <<"cccp-retries_exceeded">>.
 
 -spec relay_amqp(wh_json:object(), wh_proplist()) -> 'ok'.
-relay_amqp(JObj, _Props) ->
-    case whapps_call:retrieve(wh_json:get_value(<<"Call-ID">>, JObj), ?APP_NAME) of
-        {'ok', Call} -> relay_event(JObj, Call);
-        _ -> 'ok'
-    end.
-
--spec relay_event(wh_json:object(), whapps_call:call()) -> 'ok'.
-relay_event(JObj, Call) ->
-    case whapps_call:kvs_fetch('consumer_pid', Call) of
+relay_amqp(JObj, Props) ->
+    case props:get_value('module_pid', Props) of
         Pid when is_pid(Pid) -> whapps_call_command:relay_event(Pid, JObj);
         _ -> 'ok'
     end.
