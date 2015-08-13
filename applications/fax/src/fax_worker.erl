@@ -76,10 +76,15 @@
                             "-sDEVICE=tiffg3 "
                             "-sOutputFile=~s -- ~s > /dev/null "
                             "&& echo -n \"success\"">>).
--define(CONVERT_IMAGE_CMD, <<"convert -density 204x98 "
-                            "-units PixelsPerInch "
-                            "-size 1728x1078 ~s ~s > /dev/null "
-                            "&& echo -n success">>).
+-define(CONVERT_IMAGE_CMD, <<"convert -density 200 "
+                             "-format fax "
+                             "-compress fax "
+                             "-despeckle "
+                             "-threshold 80% "
+                             "-monochrome "
+                             "-units PixelsPerInch "
+                             "-size 1728x1078 ~s ~s > /dev/null "
+                             "&& echo -n success">>).
 -define(CONVERT_OO_DOC_CMD, <<"unoconv -c ~s -f pdf --stdout ~s "
                             "| /usr/bin/gs -q "
                             "-r204x98 "
