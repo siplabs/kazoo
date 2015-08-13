@@ -152,3 +152,9 @@ cw-deactivated: Call waiting is now disabled, when you are already on a call new
 cw-not_available: Call waiting is not supported from this phone. Please contact support if you beleive this is in error.
 
 stepswitch-emergency_not_configured: The account you are dialing from, is not configured for emergency services.  Contact your system administrator as soon as possible to add the emergency service configuration.
+
+cccp-enter_short_pin: Please enter your system access pin, then press pound.
+cccp-enter_long_pin: Please enter your system access pin, then press pound.
+cccp-invalid_pin: Invalid pin number.
+cccp-retries_exceeded: I'm sorry; there have been to many attempts with incorrect pins, goodbye.
+
