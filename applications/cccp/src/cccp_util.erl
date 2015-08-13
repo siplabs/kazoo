@@ -18,6 +18,12 @@
          ,pin_listing/0
         ]).
 
+-export([request_long_pin/0
+         ,request_short_pin/0
+         ,invalid_pin/0
+         ,retries_exceeded/0
+        ]).
+
 -include("cccp.hrl").
 
 -define(DEFAULT_CALLEE_REGEX, <<"^\\+?\\d{7,}$">>).
@@ -29,6 +35,22 @@ cid_listing() ->
 -spec pin_listing() -> ne_binary().
 pin_listing() ->
     <<"cccps/pin_listing">>.
+
+-spec request_long_pin() -> ne_binary().
+request_long_pin() ->
+    <<"cccp-enter_long_pin">>.
+
+-spec request_short_pin() -> ne_binary().
+request_short_pin() ->
+    <<"cccp-enter_short_pin">>.
+
+-spec invalid_pin() -> ne_binary().
+invalid_pin() ->
+    <<"cccp-invalid_pin">>.
+
+-spec retries_exceeded() -> ne_binary().
+retries_exceeded() ->
+    <<"cccp-retries_exceeded">>.
 
 -spec relay_amqp(wh_json:object(), wh_proplist()) -> 'ok'.
 relay_amqp(JObj, _Props) ->
