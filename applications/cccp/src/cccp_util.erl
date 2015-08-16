@@ -15,6 +15,7 @@
          ,build_bridge_request/6
          ,cid_listing/0
          ,pin_listing/0
+         ,caller_cid/1
         ]).
 
 -export([request_long_pin/0
@@ -50,6 +51,10 @@ invalid_pin() ->
 -spec retries_exceeded() -> ne_binary().
 retries_exceeded() ->
     <<"cccp-retries_exceeded">>.
+
+-spec caller_cid(whapps_call:call()) -> binary().
+caller_cid(Call) ->
+    wnm_util:normalize_number(whapps_call:caller_id_number(Call)).
 
 -spec relay_amqp(wh_json:object(), wh_proplist()) -> 'ok'.
 relay_amqp(JObj, Props) ->
