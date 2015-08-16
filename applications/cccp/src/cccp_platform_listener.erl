@@ -216,7 +216,7 @@ code_change(_OldVsn, State, _Extra) ->
 -spec process_call_to_platform(whapps_call:call()) -> 'ok'.
 process_call_to_platform(Call) ->
     whapps_call_command:answer(Call),
-    CID = wnm_util:normalize_number(whapps_call:caller_id_number(Call)),
+    CID = cccp_util:caller_cid(Call),
     case (not cccp_blocking:is_cid_blocked(CID)) andalso authorize(Call) of
         'false' ->
             lager:info("CID blocked! Hangup."),
@@ -233,7 +233,7 @@ process_call_to_platform(Call) ->
 -spec authorize(whapps_call:call()) -> cccp_auth:cccp_auth() | 'fail'.
 -spec authorize(whapps_call:call(), cccp_auth:cccp_auth_ret()) -> cccp_auth:cccp_auth() | 'fail'.
 authorize(Call) ->
-    CID = wnm_util:normalize_number(whapps_call:caller_id_number(Call)),
+    CID = cccp_util:caller_cid(Call),
     Auth = cccp_auth:authorize(CID, cccp_util:cid_listing()),
     authorize(Call, Auth).
 authorize(Call, {'error', 'empty'}) ->
@@ -256,7 +256,7 @@ authorize(Call, {'ok', Auth}) ->
 pin_auth(Call, Pin) ->
     pin_auth(Call, Pin, 'collect', ?MAX_ATTEMPTS).
 pin_auth(Call, _Pin, _State, Attempts) when Attempts =< 0 ->
-    cccp_blocking:block_cid(wnm_util:normalize_number(whapps_call:caller_id_number(Call))),
+    cccp_blocking:block_cid(cccp_util:caller_cid(Call)),
     whapps_call_command:b_prompt(cccp_util:retries_exceeded(), Call),
     'fail';
 pin_auth(Call, Pin, 'collect', Attempts) ->
