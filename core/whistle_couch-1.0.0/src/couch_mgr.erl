@@ -33,7 +33,7 @@
 -export([save_doc/2, save_doc/3
          ,save_docs/2, save_docs/3
          ,open_cache_doc/2, open_cache_doc/3
-         ,update_cache_doc/3
+         ,update_cache_doc/3, update_cache_doc/4
          ,flush_cache_doc/2, flush_cache_doc/3
          ,flush_cache_docs/0, flush_cache_docs/1
          ,add_to_doc_cache/3
@@ -84,6 +84,7 @@
 %% Types
 -export_type([get_results_return/0
               ,couchbeam_error/0
+              ,jobj_updater/0
              ]).
 
 -include_lib("wh_couch.hrl").
@@ -529,24 +530,40 @@ add_to_doc_cache(DbName, DocId, Doc) ->
         {'error', _}=E -> E
     end.
 
--spec update_cache_doc(text(), ne_binary(), fun((wh_json:object()) -> wh_json:object() | 'skip')) ->
-                      {'ok', wh_json:object()}
-                      | couchbeam_error().
+-type jobj_updater() :: fun((wh_json:object()) -> wh_json:object() | 'skip').
+-spec update_cache_doc(text(), ne_binary(), jobj_updater()) -> {'ok', wh_json:object()}
+                                                               | couchbeam_error().
 update_cache_doc(DbName, DocId, Fun) when is_function(Fun, 1) ->
+    update_cache_doc(DbName, DocId, Fun, 'undefined').
+
+-spec update_cache_doc(text(), ne_binary(), jobj_updater(), api_object()) -> {'ok', wh_json:object()}
+                                                                             | couchbeam_error().
+update_cache_doc(DbName, DocId, UpdateFun, CreateJObj) when is_function(UpdateFun, 1) ->
     case open_cache_doc(DbName, DocId) of
         {'ok', JObj} ->
-            NewJObj = Fun(JObj),
+            NewJObj = UpdateFun(JObj),
             maybe_save_doc(DbName, NewJObj, JObj);
-        {'error', _Reason} = Else ->
-            lager:error("Can't open doc ~s/~s coz ~p", [DbName, DocId, _Reason]),
-            Else
+        {'error', _Reason} = Else -> handle_update_error(DbName, DocId, Else, CreateJObj)
     end.
+
+-spec handle_update_error(ne_binary(), ne_binary(), couchbeam_error(), api_object()) -> {'ok', wh_json:object()}
+                                                                                        | couchbeam_error().
+handle_update_error(_DbName, _DocId, {'error', 'not_found' = _Reason} = Ret, 'undefined') ->
+    lager:error("Can't open doc ~s/~s coz ~p", [_DbName, _DocId, _Reason]),
+    Ret;
+handle_update_error(DbName, DocId, {'error', 'not_found'}, CreateJObj) ->
+    couch_mgr:save_doc(DbName, wh_json:set_value(<<"_id">>, DocId, CreateJObj));
+handle_update_error(_DbName, _DocId, {'error', _Reason} = Ret, _) ->
+    lager:error("Can't open doc ~s/~s coz ~p", [_DbName, _DocId, _Reason]),
+    Ret.
 
 -spec maybe_save_doc(text(), wh_json:object() | 'skip', wh_json:object()) ->
                       {'ok', wh_json:object() | wh_json:objects()} |
                       couchbeam_error().
-maybe_save_doc(_DbName, 'skip', Jobj) ->
-    {'ok', Jobj};
+maybe_save_doc(_DbName, 'skip', JObj) ->
+    {'ok', JObj};
+maybe_save_doc(_DbName, JObj, JObj) ->
+    {'ok', JObj};
 maybe_save_doc(DbName, JObj, _OldJobj) ->
     save_doc(DbName, JObj).
 
