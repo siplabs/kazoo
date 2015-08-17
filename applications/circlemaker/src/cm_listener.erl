@@ -179,7 +179,7 @@ maybe_processing_authz(JObj) ->
                                 ,{<<"Account-ID">>, AccountId}
                             ], JObj)
                     end,
-            {'ok', AccountDoc} = couch_mgr:open_cache_doc(?WH_ACCOUNTS_DB, AccountId),
+            {'ok', AccountDoc} = couch_mgr:open_cache_doc(<<"account">>, AccountId),
             AccountName = wh_json:get_value(<<"name">>, AccountDoc),
             JObj2 = wh_json:set_value([<<"Custom-Auth-Vars">>, <<"Account-Name">>], AccountName, JObj1),
             cm_pool_mgr:do_request(JObj2);
