@@ -308,6 +308,7 @@ delete(Context, Account) ->
         'false' ->
             cb_context:add_system_error('bad_identifier', wh_json:from_list([{<<"cause">>, AccountId}]),  Context);
         'true' ->
+            _ = crossbar_bindings:map(<<"account.deleted">>, Context),
             Context1 = delete_remove_services(prepare_context(Context, AccountId, AccountDb)),
             Tree = wh_json:get_value(<<"pvt_tree">>, cb_context:doc(Context1)),
             _ = maybe_update_descendants_count(Tree),

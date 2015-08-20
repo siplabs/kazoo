@@ -15,6 +15,7 @@
          ,put/1
          ,post/2
          ,delete/2
+         ,delete_orphaned_cccps/1
         ]).
 
 -include("../crossbar.hrl").
@@ -39,7 +40,8 @@ init() ->
     _ = crossbar_bindings:bind(<<"*.validate.cccps">>, ?MODULE, 'validate'),
     _ = crossbar_bindings:bind(<<"*.execute.put.cccps">>, ?MODULE, 'put'),
     _ = crossbar_bindings:bind(<<"*.execute.post.cccps">>, ?MODULE, 'post'),
-    _ = crossbar_bindings:bind(<<"*.execute.delete.cccps">>, ?MODULE, 'delete').
+    _ = crossbar_bindings:bind(<<"*.execute.delete.cccps">>, ?MODULE, 'delete'),
+    _ = crossbar_bindings:bind(<<"account.deleted">>, ?MODULE, 'delete_orphaned_cccps').
 
 -spec maybe_init_db() -> 'ok'.
 maybe_init_db() ->
@@ -161,6 +163,18 @@ delete(Context, _) ->
         _ ->
             Context2
     end.
+
+-spec delete_orphaned_cccps(cb_context:context()) -> cb_context:context().
+delete_orphaned_cccps(Context) ->
+    ViewOptions = [{'key', cb_context:account_id(Context)}],
+    case couch_mgr:get_results(?KZ_CCCPS_DB, <<"cccps/by_account_id">>, ViewOptions) of
+        {'ok', JObjs} -> couch_mgr:del_docs(?KZ_CCCPS_DB, lists:map(fun get_doc_id/1, JObjs));
+        _Err -> lager:error("Can not cleanup cccps for deleted for ~s due to ~p", [cb_context:account_db(Context), _Err])
+    end.
+
+-spec get_doc_id(wh_json:object()) -> ne_binary().
+get_doc_id(JObj) ->
+    wh_json:get_value(<<"value">>, JObj).
 
 %%--------------------------------------------------------------------
 %% @private
