@@ -23,6 +23,7 @@
 -export([is_cid_blocked/1
          ,block_cid/1
          ,clear_blocking/1
+         ,blocking_expiration/0
         ]).
 
 %% gen_server
@@ -34,6 +35,10 @@
          ,terminate/2
          ,code_change/3
         ]).
+
+-spec blocking_expiration() -> ne_binary().
+blocking_expiration() ->
+    <<"blocking/expired">>.
 
 -spec is_cid_blocked(ne_binary()) -> boolean().
 is_cid_blocked(CID) ->
@@ -82,7 +87,7 @@ handle_info('clear', State) ->
     ViewOptions = [{'descending', 'true'}
                    ,{'startkey', wh_util:current_tstamp()}
                   ],
-    case couch_mgr:get_results(?KZ_CCCPS_DB, <<"blocking/expired">>, ViewOptions) of
+    case couch_mgr:get_results(?KZ_CCCPS_DB, blocking_expiration(), ViewOptions) of
         {'ok', JObjs} -> couch_mgr:del_docs(?KZ_CCCPS_DB, [wh_json:get_value(<<"id">>, JObj) || JObj <- JObjs]);
         _Err -> lager:warning("can not fetch blocked CIDs due to ~p", [_Err])
     end,
