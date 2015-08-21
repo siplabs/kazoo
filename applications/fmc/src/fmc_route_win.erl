@@ -19,7 +19,7 @@ handle_req(JObj, Props) ->
     'true' = wapi_route:win_v(JObj),
     CallId = wh_json:get_value(<<"Call-ID">>, JObj),
     put('callid', CallId),
-    case whapps_call:retrieve(CallId, ?APP_NAME1) of
+    case whapps_call:retrieve(CallId, ?APP_NAME) of
         {'ok', C} ->
             lager:debug("FMC wins the routing"),
             Call = whapps_call:from_route_win(JObj, C),
@@ -28,7 +28,7 @@ handle_req(JObj, Props) ->
             MsgId = wh_json:get_value(<<"Msg-ID">>, RouteReqJObj),
             fmc_ets:put(MsgId, CallId, C),
             UpdatedCall = whapps_call:kvs_store(<<"fmc_action_win">>, JObj, Call),
-            whapps_call:cache(UpdatedCall, ?APP_NAME2),
+            whapps_call:cache(UpdatedCall, ?APP_NAME),
             maybe_rewrite_headers(FmcRec, RouteReqJObj, Props);
         {'error', _R} ->
             lager:error("something went wrong: ~p", [_R])
@@ -69,7 +69,8 @@ maybe_rewrite_headers(FmcRec, RouteReqJObj, Props) ->
                                         ,{[<<"Custom-Channel-Vars">>, <<"Authorizing-Type">>], FMCDeviceType}]
                                        ,RouteReqJObj1),
     % remove FMC specific headers
-    RouteReq = wh_json:delete_key([[<<"Custom-SIP-Headers">>, whapps_config:get(<<"fmc">>, <<"x_fmc_header">>)]]
+    FMCConfig = fmc_db:get_fmc_config(),
+    RouteReq = wh_json:delete_key([[<<"Custom-SIP-Headers">> ,wh_json:get_value(<<"x_fmc_header">>, FMCConfig)]]
                                   ,RouteReqJObj2),
     % send to all route_req handlers
     lager:debug("Rewritten request is ~p", [RouteReq]),

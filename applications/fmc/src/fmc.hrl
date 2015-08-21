@@ -14,8 +14,6 @@
 -include_lib("whistle/include/wh_databases.hrl").
 
 -define(APP_NAME, <<"fmc">>).
--define(APP_NAME1, <<"fmc1">>).
--define(APP_NAME2, <<"fmc2">>).
 -define(APP_VERSION, <<"1.0.0">>).
 
 -define(FMC_HRL, 'true').
