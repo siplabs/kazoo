@@ -54,16 +54,6 @@ handle_req(JObj, _Props) ->
             end
     end.
 
--spec get_auth_user(wh_json:object()) -> ne_binary().
-get_auth_user(JObj) ->
-    case wapi_authn:get_auth_user(JObj) of
-        <<"unknown">> ->
-            To = wh_json:get_value(<<"To">>, JObj,<<"nouser@nodomain">>),
-            [ToUser, _ToDomain] = binary:split(To, <<"@">>),
-            wh_util:to_lower_binary(ToUser);
-        Username -> Username
-    end.
-
 -spec send_auth_resp(auth_user(), wh_json:object()) -> 'ok'.
 send_auth_resp(#auth_user{password=Password
                           ,username=Username
