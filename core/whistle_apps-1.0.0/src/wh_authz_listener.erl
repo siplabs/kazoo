@@ -26,6 +26,7 @@
 
 -include_lib("whistle/include/wh_types.hrl").
 -include_lib("whistle/include/wh_log.hrl").
+-include_lib("whistle/include/wh_databases.hrl").
 
 %% By convention, we put the options here in macros, but not required.
 -define(RESPONDERS, [{{?MODULE, 'process_authz_broadcast_request'} ,[{<<"authz">>, <<"authz.broadcast.req">>}]} % TODO: replace by wapi_authz:resp_event_type()-like call
@@ -73,10 +74,22 @@ process_authz_broadcast_request(JObj, _Props) ->
     Request = wh_json:get_value(<<"Request">>, JObj),
     [Num|_] = binary:split(Request, <<"@">>),
     CC_Number = wnm_util:normalize_number(whapps_config:get(<<"cccp">>, <<"cccp_cc_number">>)),
-    case wnm_util:normalize_number(Num) of
-        CC_Number ->
+    % check FMC numbers
+    {'ok', FMCJObjs} = couch_mgr:get_all_results(?WH_FMC_DB, <<"fmc_devices/crossbar_listing">>),
+    FMCValues = [wh_json:get_value(<<"value">>, FMCJObj) || FMCJObj <- FMCJObjs],
+    ResultedFMCValue = [FMCValue || FMCValue <- FMCValues
+                          ,wnm_util:normalize_number(wh_json:get_value(<<"a_number">>, FMCValue))
+                              =:= wnm_util:normalize_number(Num)],
+    IsFMCMember = (length(ResultedFMCValue) > 0),
+    case {wnm_util:normalize_number(Num), IsFMCMember} of
+        {CC_Number, 'false'} ->
             % if it's cccp cc number then authorize it
             lager:debug("Authz granted for this account because of that the Request is cccp cc number"),
+            JObj1 = wh_json:set_value([<<"Custom-Auth-Vars">>, <<"AAA-Authz-Granted">>], <<"true">>, JObj),
+            wapi_authz:publish_authz_req(JObj1);
+        {_, 'true'} ->
+            % if it's FMC number then authorize it
+            lager:debug("Authz granted for this account because of that the Request is FMC number"),
             JObj1 = wh_json:set_value([<<"Custom-Auth-Vars">>, <<"AAA-Authz-Granted">>], <<"true">>, JObj),
             wapi_authz:publish_authz_req(JObj1);
         _ ->
