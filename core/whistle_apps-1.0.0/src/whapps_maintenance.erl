@@ -244,10 +244,6 @@ refresh(?WH_FMC_DB) ->
     couch_mgr:db_create(?WH_FMC_DB),
     _ = couch_mgr:revise_doc_from_file(?WH_FMC_DB, 'fmc', ?FMC_VIEW_FILE),
     'ok';
-refresh(?WH_FMC_DB) ->
-    couch_mgr:db_create(?WH_FMC_DB),
-    _ = couch_mgr:revise_doc_from_file(?WH_FMC_DB, 'fmc', ?FMC_VIEW_FILE),
-    'ok';
 refresh(Database) when is_binary(Database) ->
     case couch_util:db_classification(Database) of
         'account' -> refresh_account_db(Database);
