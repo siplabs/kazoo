@@ -45,4 +45,4 @@ These parameters can be set in (first one that's set wins)
 * * `vm_notify_callback_timeout` in account's document
 * * `vm_notify_callback_timeout` in ananke's system config (default 20)
 
-> Written with [StackEdit](https://stackedit.io/).
+Also you can set `originartor_type` to define channel variable.

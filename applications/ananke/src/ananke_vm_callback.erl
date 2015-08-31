@@ -24,6 +24,7 @@
                ,attempts
                ,interval
                ,call_timeout
+               ,originator_type
               }).
 
 -spec init() -> 'ok'.
@@ -60,6 +61,7 @@ handle_req(JObj, _Props) ->
             Interval = get_interval(VMBoxJObj, UserJObj, AccountJObj),
             Attempts = get_attempts(VMBoxJObj, UserJObj, AccountJObj),
             CallTimeout = get_callback_timeout(VMBoxJObj, UserJObj, AccountJObj),
+            OrigType = get_originator_type(),
 
             StartArgs = #args{account_id = AccountId
                               ,user_id = UserId
@@ -71,6 +73,7 @@ handle_req(JObj, _Props) ->
                               ,attempts = Attempts
                               ,interval = Interval
                               ,call_timeout = CallTimeout
+                              ,originator_type = OrigType
                              },
             maybe_start_caller(StartArgs)
     end.
@@ -136,6 +139,7 @@ build_originate_req(#args{callback_number = CallbackNumber
                           ,user_id = UserId
                           ,call_timeout = Timeout
                           ,mailbox = Mailbox
+                          ,originator_type = OrigType
                          }) ->
     CalleeName = <<"Voicemail">>,
     CalleeNumber = CallbackNumber,
@@ -149,6 +153,7 @@ build_originate_req(#args{callback_number = CallbackNumber
                                            ,{<<"Authorizing-ID">>, UserId}
                                            ,{<<"Inherit-Codec">>, <<"false">>}
                                            ,{<<"Authorizing-Type">>, <<"user">>}
+                                           ,{<<"Originator-Type">>, OrigType}
                                           ]),
 
     Endpoint = [{<<"Invite-Format">>, <<"loopback">>}
@@ -177,7 +182,7 @@ build_originate_req(#args{callback_number = CallbackNumber
        ,{<<"Custom-Channel-Vars">>, CustomChannelVars}
        ,{<<"Export-Custom-Channel-Vars">>, [<<"Account-ID">>, <<"Retain-CID">>
                                            ,<<"Authorizing-ID">>, <<"Authorizing-Type">>
-                                           ,<<"Owner-ID">>]}
+                                           ,<<"Owner-ID">>, <<"Originator-Type">>]}
        | wh_api:default_headers(<<"resource">>, <<"originate_req">>, ?APP_NAME, ?APP_VERSION)
       ],
     props:filter_undefined(R).
@@ -232,3 +237,7 @@ get_callback_timeout(VMBoxJObj, UserJObj, AccountJObj) ->
                          ,{<<"vm_notify_callback_timeout">>, AccountJObj}
                         ]
                         ,DefaultCallTimeout)).
+
+-spec get_originator_type() -> ne_binary().
+get_originator_type() ->
+    whapps_config:get_binary(?CONFIG_CAT, <<"originator_type">>, <<"Voicemail">>).
