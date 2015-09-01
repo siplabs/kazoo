@@ -374,6 +374,7 @@ maybe_resource_to_endpoints(#resrc{id=Id
             lager:debug("building resource ~s endpoints", [Id]),
             CCVUpdates = [{<<"Global-Resource">>, wh_util:to_binary(Global)}
                           ,{<<"Resource-ID">>, Id}
+                          ,{<<"Resource-Name">>, Name}
                           ,{<<"E164-Destination">>, Number}
                          ],
             Updates = [{<<"Name">>, Name}

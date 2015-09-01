@@ -275,6 +275,7 @@ build_bridge(#state{endpoints=Endpoints
        ,{<<"Outbound-Callee-ID-Number">>, wh_json:get_value(<<"Outbound-Callee-ID-Number">>, JObj)}
        ,{<<"Outbound-Callee-ID-Name">>, wh_json:get_value(<<"Outbound-Callee-ID-Name">>, JObj)}
        ,{<<"B-Leg-Events">>, BLegEvents}
+       ,{<<"Export-Custom-Channel-Vars">>, [<<"Resource-Name">>]}
        | wh_api:default_headers(Q, <<"call">>, <<"command">>, ?APP_NAME, ?APP_VERSION)
       ]).
 
