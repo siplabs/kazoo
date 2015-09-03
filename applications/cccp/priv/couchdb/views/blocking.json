@@ -1,0 +1,9 @@
+{
+    "_id": "_design/blocking"
+    ,"language": "javascript"
+    ,"views": {
+        "expired": {
+            "map": "function(doc) { if (doc.pvt_type != 'cid_blocking' || doc.pvt_deleted) return; emit(doc.till,{});}"
+        }
+    }
+}
