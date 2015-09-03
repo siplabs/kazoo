@@ -80,7 +80,7 @@ handle_call(_Request, _From, State) ->
     {'reply', {'error', 'not_implemented'}, State}.
 
 handle_cast(_Msg, State) ->
-    lager:info("Unhandled msg: ~p", [_Msg]),
+    lager:debug("unhandled msg: ~p", [_Msg]),
     {'noreply', State}.
 
 handle_info('clear', State) ->
@@ -89,7 +89,7 @@ handle_info('clear', State) ->
                   ],
     case couch_mgr:get_results(?KZ_CCCPS_DB, blocking_expiration(), ViewOptions) of
         {'ok', JObjs} -> couch_mgr:del_docs(?KZ_CCCPS_DB, [wh_json:get_value(<<"id">>, JObj) || JObj <- JObjs]);
-        _ -> 'ok'
+        _Err -> lager:warning("can not fetch blocked CIDs due to ~p", [_Err])
     end,
     send_clear(),
     {'noreply', State};
@@ -97,12 +97,12 @@ handle_info(_Info, State) ->
     {'noreply', State}.
 
 terminate(_Reason, _State) ->
-    lager:debug("listener terminating: ~p", [_Reason]).
+    lager:debug("worker terminating: ~p", [_Reason]).
 
 code_change(_OldVsn, State, _Extra) ->
     {'ok', State}.
 
 -spec send_clear() -> 'ok'.
 send_clear() ->
-    timer:send_after(?CRAWLER_INTERVAL, self(), 'clear'),
+    {'ok', _} = timer:send_after(?CRAWLER_INTERVAL, self(), 'clear'),
     'ok'.

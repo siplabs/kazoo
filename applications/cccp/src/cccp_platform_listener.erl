@@ -28,15 +28,16 @@
 
 -record(state, {call = whapps_call:new() :: whapps_call:call()
                 ,flow = wh_json:new() :: wh_json:object()
-                ,cccp_module_pid :: api_pid()
+                ,relay_pid :: api_pid()
                 ,status = <<"sane">> :: ne_binary()
                 ,queue :: api_binary()
                 ,self = self() :: pid()
                }).
 -type state() :: #state{}.
 
--define(NTRIES, whapps_config:get(?CCCP_CONFIG_CAT, <<"tries_count">>, 3)).
+-define(MAX_ATTEMPTS, whapps_config:get(?CCCP_CONFIG_CAT, <<"tries_count">>, 3)).
 -define(PLATFORM_COLLECT_TIMEOUT, whapps_config:get_integer(?CCCP_CONFIG_CAT, <<"platform_collect_timeout">>, 5000)).
+-define(PLATFORM_ORIGINATOR, whapps_config:get_integer(?CCCP_CONFIG_CAT, <<"platform_origiantor_type">>, <<"CCCP">>)).
 
 %% By convention, we put the options here in macros, but not required.
 -define(BINDINGS(CallId), [{'self', []}
@@ -135,7 +136,7 @@ handle_cast({'gen_listener',{'created_queue',Queue}}, #state{call=Call}=State) -
     {'noreply', State#state{call=whapps_call:set_controller_queue(Queue, Call)}};
 handle_cast({'gen_listener',{'is_consuming', 'true'}}, #state{call=Call}=State) ->
     Pid = erlang:spawn_link(?MODULE, 'process_call_to_platform', [Call]),
-    {'noreply', State#state{cccp_module_pid = Pid}};
+    {'noreply', State#state{relay_pid = Pid}};
 handle_cast(_Msg, State) ->
     lager:info("Unhandled msg: ~p", [_Msg]),
     {'noreply', State}.
@@ -164,28 +165,25 @@ handle_info(_Info, State) ->
 %% @spec handle_event(JObj, State) -> {reply, Options}
 %% @end
 %%--------------------------------------------------------------------
-handle_event(_JObj, #state{cccp_module_pid = Pid
+handle_event(_JObj, #state{relay_pid = Pid
                            ,call = Call
                           }) ->
-    Props1 = case kz_call_event:event_name(_JObj) of
-        <<"route_resp">> -> [{'route_win', [{<<"Msg-ID">>, whapps_call:call_id(Call)}
-                                            ,{<<"Call-ID">>, whapps_call:call_id(Call)}
-                                            ,{<<"Control-Queue">>, whapps_call:control_queue(Call)}
-                                            ,{<<"Custom-Channel-Vars">>, whapps_call:custom_channel_vars(Call)}
-                                            | wh_api:default_headers(whapps_call:controller_queue(Call)
-                                                                     ,<<"dialplan">>
-                                                                     ,<<"route_win">>
-                                                                     ,?APP_NAME
-                                                                     ,?APP_VERSION
-                                                                    )
-                                           ]}];
-        _ -> []
+    Props = case kz_call_event:event_name(_JObj) of
+                <<"route_resp">> -> [{'relay_pid', Pid}
+                                     ,{'route_win', [{<<"Msg-ID">>, whapps_call:call_id(Call)}
+                                                     ,{<<"Call-ID">>, whapps_call:call_id(Call)}
+                                                     ,{<<"Control-Queue">>, whapps_call:control_queue(Call)}
+                                                     ,{<<"Custom-Channel-Vars">>, whapps_call:custom_channel_vars(Call)}
+                                                     | wh_api:default_headers(whapps_call:controller_queue(Call)
+                                                                              ,<<"dialplan">>
+                                                                              ,<<"route_win">>
+                                                                              ,?APP_NAME
+                                                                              ,?APP_VERSION
+                                                                             )
+                                                     ]}];
+        _ -> [{'relay_pid', Pid}]
     end,
-    Props2 = case is_pid(Pid) of
-                'true' -> [{'module_pid', Pid}];
-                'false' -> []
-            end,
-    {'reply', Props1 ++ Props2}.
+    {'reply', Props}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -257,12 +255,12 @@ authorize(Call, {'ok', Auth}) ->
 -spec pin_auth(whapps_call:call(), api_binary()) -> cccp_auth:cccp_auth() | 'fail' | 'match'.
 -spec pin_auth(whapps_call:call(), api_binary(), term(), integer()) -> cccp_auth:cccp_auth() | 'fail' | 'match'.
 pin_auth(Call, Pin) ->
-    pin_auth(Call, Pin, 'collect', ?NTRIES).
-pin_auth(Call, _Pin, _State, Try) when Try =< 0 ->
+    pin_auth(Call, Pin, 'collect', ?MAX_ATTEMPTS).
+pin_auth(Call, _Pin, _State, Attempts) when Attempts =< 0 ->
     cccp_blocking:block_cid(cccp_util:caller_cid(Call)),
     whapps_call_command:b_prompt(cccp_util:retries_exceeded(), Call),
     'fail';
-pin_auth(Call, Pin, 'collect', Try) ->
+pin_auth(Call, Pin, 'collect', Attempts) ->
     PinPrompt = case Pin of
                     'undefined' -> cccp_util:request_long_pin();
                     _ -> cccp_util:request_short_pin()
@@ -270,26 +268,26 @@ pin_auth(Call, Pin, 'collect', Try) ->
     case pin_collect(PinPrompt, Call) of
         {'ok', EnteredPin} ->
             lager:debug("Checking ~p", [EnteredPin]),
-            pin_auth(Call, Pin, {'check', EnteredPin}, Try);
+            pin_auth(Call, Pin, {'check', EnteredPin}, Attempts);
         {'error', Err} ->
             lager:error("Can't collect pin: ~p", [Err]),
-            pin_auth(Call, Pin, 'collect', Try - 1)
+            pin_auth(Call, Pin, 'collect', Attempts - 1)
     end;
-pin_auth(Call, 'undefined', {'check', Pin}, Try) when is_binary(Pin) ->
+pin_auth(Call, 'undefined', {'check', Pin}, Attempts) when is_binary(Pin) ->
     lager:debug("Trying to authorize by pin ~s", [Pin]),
     case cccp_auth:authorize(Pin, cccp_util:pin_listing()) of
         {'ok', Auth} -> Auth;
         _ ->
             whapps_call_command:b_prompt(cccp_util:invalid_pin(), Call),
-            pin_auth(Call, 'undefined', 'collect', Try - 1)
+            pin_auth(Call, 'undefined', 'collect', Attempts - 1)
     end;
-pin_auth(_Call, Pin, {'check', Pin}, _Try) when is_binary(Pin) ->
+pin_auth(_Call, Pin, {'check', Pin}, _Attempts) when is_binary(Pin) ->
     lager:debug("Authorized by pin: ~s", [Pin]),
     'match';
-pin_auth(Call, Pin, {'check', _WrongPin}, Try) ->
+pin_auth(Call, Pin, {'check', _WrongPin}, Attempts) ->
     whapps_call_command:b_prompt(cccp_util:invalid_pin(), Call),
     lager:debug("Wrong pin: ~s", [_WrongPin]),
-    pin_auth(Call, Pin, 'collect', Try - 1).
+    pin_auth(Call, Pin, 'collect', Attempts - 1).
 
 -spec pin_collect(ne_binary(), whapps_call:call()) -> whapps_call_command:b_play_and_collect_digits_return().
 pin_collect(PinPrompt, Call) ->
@@ -305,11 +303,17 @@ pin_collect(PinPrompt, Call) ->
 relay_call(Auth, Call) ->
     RequestUser = whapps_config:get(?CCCP_CONFIG_CAT, <<"callflow_number">>, <<"cccp_handler">>),
     NewRequest = iolist_to_binary([RequestUser, <<"@">>, whapps_call:request_realm(Call)]),
-    Call1 = whapps_call:set_account_id(cccp_auth:account_id(Auth), Call),
-    Call2 = whapps_call:set_request(NewRequest, Call1),
-    RouteReg = from_call(Call2),
+    NewCall = whapps_call:exec([{fun whapps_call:set_account_id/2, cccp_auth:account_id(Auth)}
+                                ,{fun whapps_call:set_request/2, NewRequest}
+                                ,{fun whapps_call:set_custom_channel_var/3, <<"Originator-Type">>, ?PLATFORM_ORIGINATOR}
+                               ], Call),
+    whapps_call_command:set('undefined'
+                            ,wh_json:set_value(<<"Originator-Type">>, ?PLATFORM_ORIGINATOR, wh_json:new())
+                            ,NewCall
+                           ),
+    RouteReq = from_call(NewCall),
     lager:info("Publishing route req"),
-    wh_amqp_worker:cast(RouteReg, fun wapi_route:publish_req/1).
+    wh_amqp_worker:cast(RouteReq, fun wapi_route:publish_req/1).
 
 -spec from_call(whapps_call:call()) -> wh_proplist().
 from_call(Call) ->

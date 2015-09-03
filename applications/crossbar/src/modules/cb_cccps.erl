@@ -305,4 +305,3 @@ unique_cid(#cb_context{req_data=ReqData}) ->
 unique_pin(#cb_context{req_data=ReqData}) ->
     Pin = wh_json:get_value(<<"pin">>, ReqData),
     cccp_auth:authorize(Pin, <<"cccps/pin_listing">>).
-

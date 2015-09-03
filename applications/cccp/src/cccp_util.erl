@@ -58,7 +58,7 @@ caller_cid(Call) ->
 
 -spec relay_amqp(wh_json:object(), wh_proplist()) -> 'ok'.
 relay_amqp(JObj, Props) ->
-    case props:get_value('module_pid', Props) of
+    case props:get_value('relay_pid', Props) of
         Pid when is_pid(Pid) -> whapps_call_command:relay_event(Pid, JObj);
         _ -> 'ok'
     end.
