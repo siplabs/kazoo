@@ -30,6 +30,9 @@
 
 -define(DEFAULT_EVENT_WAIT, 10000).
 
+-define(PSTN_ORIGINATOR_TYPE, whapps_config:get(?CF_CONFIG_CAT, <<"pstn_originator_type">>, <<"PSTN">>)).
+-define(SIP_ORIGINATOR_TYPE, whapps_config:get(?CF_CONFIG_CAT, <<"sip_originator_type">>, <<"SIP">>)).
+
 %%--------------------------------------------------------------------
 %% @public
 %% @doc
@@ -92,8 +95,29 @@ build_offnet_request(Data, Call) ->
                             ,{<<"Bypass-E164">>, get_bypass_e164(Data)}
                             ,{<<"Inception">>, get_inception(Call)}
                             ,{<<"B-Leg-Events">>, [<<"DTMF">>]}
+                            ,{<<"Custom-Channel-Vars">>, get_channel_vars(Call)}
+                            ,{<<"Export-Custom-Channel-Vars">>, [<<"Originator-Type">>]}
                             | wh_api:default_headers(cf_exe:queue_name(Call), ?APP_NAME, ?APP_VERSION)
                            ]).
+
+-spec get_channel_vars(whapps_call:call()) -> wh_json:object().
+get_channel_vars(Call) ->
+    wh_json:from_list(props:filter_undefined([{<<"Originator-Type">>, maybe_set_originator_type(Call)}])).
+
+-spec maybe_set_originator_type(whapps_call:call()) -> ne_binary().
+maybe_set_originator_type(Call) ->
+    case whapps_call:custom_channel_var(<<"Originator-Type">>, Call) of
+        'undefined' -> lookup_originator_type(Call);
+        Else -> Else
+    end.
+
+-spec lookup_originator_type(whapps_call:call()) -> ne_binary().
+lookup_originator_type(Call) ->
+    case whapps_call:authorizing_type(Call) of
+        <<"user">> -> ?SIP_ORIGINATOR_TYPE;
+        <<"device">> -> ?SIP_ORIGINATOR_TYPE;
+        _ -> ?PSTN_ORIGINATOR_TYPE
+    end.
 
 -spec get_bypass_e164(wh_json:object()) -> boolean().
 get_bypass_e164(Data) ->
