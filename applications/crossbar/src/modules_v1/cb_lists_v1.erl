@@ -230,7 +230,7 @@ load_lists(false, Context) ->
 load_lists(true, Context) ->
     Entries = cb_context:doc(crossbar_doc:load_view(<<"lists/entries">>
                                                     ,[]
-                                                    ,Context
+                                                    ,cb_context:set_query_string(Context, wh_json:new())
                                                     ,fun normalize_view_results/2)),
     crossbar_doc:load_view(<<"lists/crossbar_listing_v2">>
                            ,[]
