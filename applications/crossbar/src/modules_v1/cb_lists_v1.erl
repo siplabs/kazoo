@@ -224,7 +224,7 @@ normalize_view_results(JObj, Acc) ->
 -spec load_lists(boolean(), cb_context:context()) -> cb_context:context().
 load_lists(false, Context) ->
     crossbar_doc:load_view(?CB_LIST
-                           ,[{'group_level', 11}]
+                           ,['group']
                            ,Context
                            ,fun normalize_view_results/2);
 load_lists(true, Context) ->
@@ -257,7 +257,7 @@ filter_entries_by_list_id(Id) ->
 -spec load_list(boolean(), cb_context:context(), ne_binary()) -> cb_context:context().
 load_list(false, Context, ListId) ->
     crossbar_doc:load_view(?CB_LIST
-                           ,[{'group_level', 11}, {'key', ListId}]
+                           ,['group', {'key', ListId}]
                            ,Context
                            ,fun normalize_view_results/2);
 load_list(true, Context, ListId) ->
