@@ -34,7 +34,8 @@
                }).
 -type state() :: #state{}.
 
--define(NTRIES, whapps_config:get(?CCCP_CONFIG_CAT, <<"tries_count">>, 3)).
+-define(MAX_ATTEMPTS, whapps_config:get(?CCCP_CONFIG_CAT, <<"tries_count">>, 3)).
+-define(PLATFORM_COLLECT_TIMEOUT, whapps_config:get_integer(?CCCP_CONFIG_CAT, <<"platform_collect_timeout">>, 5000)).
 
 %% By convention, we put the options here in macros, but not required.
 -define(BINDINGS, [{'self', []}]).
@@ -190,13 +191,81 @@ code_change(_OldVsn, State, _Extra) ->
 -spec process_call_to_platform(whapps_call:call()) -> 'ok'.
 process_call_to_platform(Call) ->
     whapps_call_command:answer(Call),
-    CID = wnm_util:normalize_number(whapps_call:caller_id_number(Call)),
-    case cccp_auth:authorize(CID, cccp_util:cid_listing()) of
-        {'ok', Auth} ->
-            dial(cccp_auth:account_id(Auth), cccp_auth:outbound_cid(Auth), cccp_auth:auth_doc_id(Auth), Call);
-        _ ->
-            pin_collect(Call)
+    case authorize(Call) of
+        'fail' -> whapps_call_command:hangup(Call);
+        Auth -> dial(cccp_auth:account_id(Auth)
+                     ,cccp_auth:outbound_cid(Auth)
+                     ,cccp_auth:auth_doc_id(Auth)
+                     ,Call
+                    )
     end.
+
+-spec authorize(whapps_call:call()) -> cccp_auth:cccp_auth() | 'fail'.
+-spec authorize(whapps_call:call(), cccp_auth:cccp_auth_ret()) -> cccp_auth:cccp_auth() | 'fail'.
+authorize(Call) ->
+    CID = wnm_util:normalize_number(whapps_call:caller_id_number(Call)),
+    Auth = cccp_auth:authorize(CID, cccp_util:cid_listing()),
+    authorize(Call, Auth).
+authorize(Call, {'error', 'empty'}) ->
+    pin_auth(Call, 'undefined');
+authorize(_Call, {'error', _Err}) ->
+    lager:error("Can't authorize coz of ~p", [_Err]),
+    'fail';
+authorize(Call, {'ok', Auth}) ->
+    Ret = case cccp_auth:pin(Auth) of
+              'undefined' -> Auth;
+              Pin when is_binary(Pin) -> pin_auth(Call, Pin)
+          end,
+    case Ret of
+        'match' -> Auth;
+        _ -> Ret
+    end.
+
+-spec pin_auth(whapps_call:call(), api_binary()) -> cccp_auth:cccp_auth() | 'fail' | 'match'.
+-spec pin_auth(whapps_call:call(), api_binary(), term(), integer()) -> cccp_auth:cccp_auth() | 'fail' | 'match'.
+pin_auth(Call, Pin) ->
+    pin_auth(Call, Pin, 'collect', ?MAX_ATTEMPTS).
+pin_auth(Call, _Pin, _State, Attempts) when Attempts =< 0 ->
+    whapps_call_command:b_prompt(cccp_util:retries_exceeded(), Call),
+    'fail';
+pin_auth(Call, Pin, 'collect', Attempts) ->
+    PinPrompt = case Pin of
+                    'undefined' -> cccp_util:request_long_pin();
+                    _ -> cccp_util:request_short_pin()
+                end,
+    case pin_collect(PinPrompt, Call) of
+        {'ok', EnteredPin} ->
+            lager:debug("Checking ~p", [EnteredPin]),
+            pin_auth(Call, Pin, {'check', EnteredPin}, Attempts);
+        {'error', Err} ->
+            lager:error("Can't collect pin: ~p", [Err]),
+            pin_auth(Call, Pin, 'collect', Attempts - 1)
+    end;
+pin_auth(Call, 'undefined', {'check', Pin}, Attempts) when is_binary(Pin) ->
+    lager:debug("Trying to authorize by pin ~s", [Pin]),
+    case cccp_auth:authorize(Pin, cccp_util:pin_listing()) of
+        {'ok', Auth} -> Auth;
+        _ ->
+            whapps_call_command:b_prompt(cccp_util:invalid_pin(), Call),
+            pin_auth(Call, 'undefined', 'collect', Attempts - 1)
+    end;
+pin_auth(_Call, Pin, {'check', Pin}, _Attempts) when is_binary(Pin) ->
+    lager:debug("Authorized by pin: ~s", [Pin]),
+    'match';
+pin_auth(Call, Pin, {'check', _WrongPin}, Attempts) ->
+    whapps_call_command:b_prompt(cccp_util:invalid_pin(), Call),
+    lager:debug("Wrong pin: ~s", [_WrongPin]),
+    pin_auth(Call, Pin, 'collect', Attempts - 1).
+
+-spec pin_collect(ne_binary(), whapps_call:call()) -> whapps_call_command:b_play_and_collect_digits_return().
+pin_collect(PinPrompt, Call) ->
+    whapps_call_command:b_prompt_and_collect_digits(4
+                                                    ,12
+                                                    ,PinPrompt
+                                                    ,1
+                                                    ,?PLATFORM_COLLECT_TIMEOUT
+                                                    ,Call
+                                                   ).
 
 -spec dial(ne_binary(), ne_binary(), ne_binary(), whapps_call:call()) -> 'ok'.
 dial(AccountId, OutboundCID, AuthDocId, Call) ->
@@ -206,35 +275,6 @@ dial(AccountId, OutboundCID, AuthDocId, Call) ->
     _ = spawn('cccp_util', 'store_last_dialed', [ToDID, AuthDocId]),
     Req = cccp_util:build_bridge_request(CallId, ToDID, <<>>, whapps_call:control_queue(Call), AccountId, OutboundCID),
     wapi_offnet_resource:publish_req(Req).
-
--spec pin_collect(whapps_call:call()) -> 'ok'.
-pin_collect(Call) ->
-    pin_collect(Call, ?NTRIES).
-pin_collect(Call, Retries) when Retries =< 0 ->
-    whapps_call_command:hangup(Call);
-pin_collect(Call, Retries) ->
-    case whapps_call_command:b_prompt_and_collect_digits(9, 12, <<"disa-enter_pin">>, 1, Call) of
-        {'ok', <<>>} ->
-            whapps_call_command:b_prompt(<<"disa-invalid_pin">>, Call),
-            pin_collect(Call, Retries - 1);
-        {'ok', EnteredPin} ->
-            handle_entered_pin(Call, Retries, EnteredPin);
-        _ ->
-            lager:info("No pin entered."),
-            whapps_call_command:b_prompt(<<"disa-invalid_pin">>, Call),
-            pin_collect(Call, Retries - 1)
-    end.
-
--spec handle_entered_pin(whapps_call:call(), integer(), ne_binary()) -> 'ok'.
-handle_entered_pin(Call, Retries, EnteredPin) ->
-    case cccp_auth:authorize(EnteredPin, cccp_util:pin_listing()) of
-        {'ok', Auth} ->
-            dial(cccp_auth:account_id(Auth), cccp_auth:outbound_cid(Auth), cccp_auth:auth_doc_id(Auth), Call);
-        _ ->
-            lager:info("Wrong Pin entered."),
-            whapps_call_command:b_prompt(<<"disa-invalid_pin">>, Call),
-            pin_collect(Call, Retries - 1)
-    end.
 
 -spec put_auth_doc_id(ne_binary(), ne_binary()) -> 'ok'.
 put_auth_doc_id(AuthDocId, CallId) ->
