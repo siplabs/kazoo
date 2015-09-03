@@ -227,6 +227,7 @@ refresh(?KZ_ACDC_DB) ->
 refresh(?KZ_CCCPS_DB) ->
     couch_mgr:db_create(?KZ_CCCPS_DB),
     _ = couch_mgr:revise_doc_from_file(?KZ_CCCPS_DB, 'crossbar', <<"views/cccps.json">>),
+    _ = couch_mgr:revise_doc_from_file(?KZ_CCCPS_DB, 'cccp', <<"views/blocking.json">>),
     'ok';
 refresh(?KZ_TOKEN_DB) ->
     _ = couch_mgr:db_create(?KZ_TOKEN_DB),
