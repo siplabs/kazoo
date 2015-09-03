@@ -37,6 +37,7 @@
 
 -define(MAX_ATTEMPTS, whapps_config:get(?CCCP_CONFIG_CAT, <<"tries_count">>, 3)).
 -define(PLATFORM_COLLECT_TIMEOUT, whapps_config:get_integer(?CCCP_CONFIG_CAT, <<"platform_collect_timeout">>, 5000)).
+-define(PLATFORM_ORIGINATOR, whapps_config:get_integer(?CCCP_CONFIG_CAT, <<"platform_origiantor_type">>, <<"CCCP">>)).
 
 %% By convention, we put the options here in macros, but not required.
 -define(BINDINGS(CallId), [{'self', []}
@@ -302,9 +303,15 @@ pin_collect(PinPrompt, Call) ->
 relay_call(Auth, Call) ->
     RequestUser = whapps_config:get(?CCCP_CONFIG_CAT, <<"callflow_number">>, <<"cccp_handler">>),
     NewRequest = iolist_to_binary([RequestUser, <<"@">>, whapps_call:request_realm(Call)]),
-    Call1 = whapps_call:set_account_id(cccp_auth:account_id(Auth), Call),
-    Call2 = whapps_call:set_request(NewRequest, Call1),
-    RouteReq = from_call(Call2),
+    NewCall = whapps_call:exec([{fun whapps_call:set_account_id/2, cccp_auth:account_id(Auth)}
+                                ,{fun whapps_call:set_request/2, NewRequest}
+                                ,{fun whapps_call:set_custom_channel_var/3, <<"Originator-Type">>, ?PLATFORM_ORIGINATOR}
+                               ], Call),
+    whapps_call_command:set('undefined'
+                            ,wh_json:set_value(<<"Originator-Type">>, ?PLATFORM_ORIGINATOR, wh_json:new())
+                            ,NewCall
+                           ),
+    RouteReq = from_call(NewCall),
     lager:info("Publishing route req"),
     wh_amqp_worker:cast(RouteReq, fun wapi_route:publish_req/1).
 
