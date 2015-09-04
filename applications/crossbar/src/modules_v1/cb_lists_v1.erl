@@ -157,8 +157,10 @@ check_list_entry_schema(ListId, EntryId, Context) ->
 -spec entry_schema_success(cb_context:context(), ne_binary(), ne_binary()) -> cb_context:context().
 entry_schema_success(Context, ListId, EntryId) ->
     Pattern = wh_json:get_value(<<"pattern">>, cb_context:doc(Context)),
-    case re:compile(Pattern) of
+    case is_binary(Pattern) andalso re:compile(Pattern) of
         {'ok', _CompiledRe} ->
+            on_entry_successful_validation(ListId, EntryId, Context);
+        'false' ->
             on_entry_successful_validation(ListId, EntryId, Context);
         {'error', {Reason0, Pos}} ->
             Reason = io_lib:format("Error: ~s in position ~p", [Reason0, Pos]),
