@@ -216,7 +216,7 @@
       ,"notify_callback_timeout": {
           "type": "integer",
           "required": false,
-          "description", "How long will system wait for answer to callback"
+          "description": "How long will system wait for answer to callback"
       }
       ,"notify_callback_attempts": {
           "type": "integer",
