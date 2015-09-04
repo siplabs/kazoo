@@ -188,11 +188,6 @@
       "name": "Organizational name",
       "description": "Full legal name of the organization"
     }
-    ,"vm_notify_callback_number": {
-        "type": "string",
-        "required": false,
-        "description": "Number for callback notifications about new VM messages"
-    }
     ,"vm_notify_callback_disabled": {
         "type": "boolean",
         "required": false,
