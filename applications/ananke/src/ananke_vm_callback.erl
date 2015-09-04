@@ -92,9 +92,25 @@ get_voicemail_number(AccountDb) ->
 
 -spec is_voicemail_cf(wh_json:object()) -> boolean().
 is_voicemail_cf(JObj) ->
-    FlowJObj = wh_json:get_value([<<"doc">>, <<"flow">>], JObj),
-    (wh_json:get_value(<<"module">>, FlowJObj) =:= <<"voicemail">>)
-        andalso (wh_json:get_value([<<"data">>, <<"action">>], FlowJObj) =:= <<"check">>).
+    FlowJObj = get_cf_flow(JObj),
+    IsFlow = wh_json:is_json_object(FlowJObj) andalso not wh_json:is_empty(FlowJObj),
+    case {IsFlow
+          ,IsFlow
+            andalso wh_json:get_value(<<"module">>, FlowJObj) =:= <<"voicemail">>
+            andalso wh_json:get_value([<<"data">>, <<"action">>], FlowJObj) =:= <<"check">>}
+    of
+        {'false', _} -> 'false';
+        {'true', 'true'} -> 'true';
+        _ -> is_voicemail_cf(FlowJObj)
+    end.
+
+-spec get_cf_flow(wh_json:object()) -> wh_json:object() | 'undefined'.
+get_cf_flow(JObj) ->
+    case wh_json:get_value([<<"children">>, <<"_">>], JObj) of
+        'undefined' ->
+            wh_json:get_value([<<"doc">>, <<"flow">>], JObj);
+        FlowJObj -> FlowJObj
+    end.
 
 -spec get_callflow_number(wh_json:object()) -> 'undefined' | ne_binary().
 get_callflow_number(Callflow) ->
