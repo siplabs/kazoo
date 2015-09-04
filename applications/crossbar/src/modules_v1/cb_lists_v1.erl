@@ -273,4 +273,8 @@ load_list(true, Context, ListId) ->
 -spec fetch_reduce_limit() -> boolean().
 fetch_reduce_limit() ->
     {'ok', Config} = couch_mgr:open_doc(<<"_config">>, <<"query_server_config">>),
-    wh_util:to_boolean(wh_json:get_binary_boolean(<<"reduce_limit">>, Config)).
+    case whapps_config:get_is_true(?CONFIG_CAT, <<"use_reduce_limit">>, 'false') of
+        'false' -> 'true';
+        'true' ->
+            wh_util:to_boolean(wh_json:get_binary_boolean(<<"reduce_limit">>, Config))
+    end.
