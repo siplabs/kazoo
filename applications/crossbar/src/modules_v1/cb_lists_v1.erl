@@ -151,7 +151,7 @@ on_successful_validation(ListId, Context) ->
 -spec check_list_entry_schema(path_token(), api_binary(), cb_context:context()) -> cb_context:context().
 check_list_entry_schema(ListId, EntryId, Context) ->
     OnSuccess = fun(C) -> entry_schema_success(C, ListId, EntryId) end,
-    ReqData = wh_json:set_value(<<"list">>, ListId, cb_context:req_data(Context)),
+    ReqData = wh_json:set_value(<<"list_id">>, ListId, cb_context:req_data(Context)),
     cb_context:validate_request_data(<<"list_entries">>, cb_context:set_req_data(Context, ReqData), OnSuccess).
 
 -spec entry_schema_success(cb_context:context(), ne_binary(), ne_binary()) -> cb_context:context().
@@ -262,13 +262,13 @@ load_list(false, Context, ListId) ->
                            ,fun normalize_view_results/2);
 load_list(true, Context, ListId) ->
     Entries = cb_context:doc(crossbar_doc:load_view(<<"lists/entries">>
-                                                    ,[]
+                                                    ,[{'key', ListId}]
                                                     ,Context
                                                     ,fun normalize_view_results/2)),
-    crossbar_doc:load_view(<<"lists/crossbar_listing_v2">>
-                           ,[{'key', ListId}]
-                           ,Context
-                           ,load_entries_and_normalize(Entries)).
+    Context1 = crossbar_doc:load(ListId, Context),
+    Doc = cb_context:doc(Context1),
+    Doc1 = wh_json:public_fields(wh_json:set_value(<<"entries">>, Entries, Doc)),
+    cb_context:set_resp_data(Context1, Doc1).
 
 -spec fetch_reduce_limit() -> boolean().
 fetch_reduce_limit() ->
