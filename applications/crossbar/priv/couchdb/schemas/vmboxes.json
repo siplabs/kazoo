@@ -198,5 +198,30 @@
           ,"description":"List of email addresses to send notifications to (in addition to owner's email, if any)"
           ,"name":"Email Addresses"
       }
+      ,"notify_callback_number": {
+          "type": "string",
+          "required": false,
+          "description": "Number for callback notifications about new messages"
+      }
+      ,"notify_callback_disabled": {
+          "type": "boolean",
+          "required": false,
+          "description": "Determines if the system will call to callback number"
+      }
+      ,"notify_callback_interval": {
+          "type": "integer",
+          "required": false,
+          "description": "How long will system wait between call back notification attempts"
+      }
+      ,"notify_callback_timeout": {
+          "type": "integer",
+          "required": false,
+          "description", "How long will system wait for answer to callback"
+      }
+      ,"notify_callback_attempts": {
+          "type": "integer",
+          "required": false,
+          "description": "How many attempts without answer will system do"
+      }
   }
 }

@@ -188,5 +188,30 @@
       "name": "Organizational name",
       "description": "Full legal name of the organization"
     }
+    ,"vm_notify_callback_number": {
+        "type": "string",
+        "required": false,
+        "description": "Number for callback notifications about new VM messages"
+    }
+    ,"vm_notify_callback_disabled": {
+        "type": "boolean",
+        "required": false,
+        "description": "Determines if the system will call to callback number"
+    }
+    ,"vm_notify_callback_interval": {
+        "type": "integer",
+        "required": false,
+        "description": "How long will system wait between call back notification attempts"
+    }
+    ,"vm_notify_callback_timeout": {
+        "type": "integer",
+        "required": false,
+        "description", "How long will system wait for answer to callback"
+    }
+    ,"vm_notify_callback_attempts": {
+        "type": "integer",
+        "required": false,
+        "description": "How many attempts without answer will system do"
+    }
   }
 }
