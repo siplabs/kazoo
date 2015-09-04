@@ -242,10 +242,8 @@ load_entries_and_normalize(AllEntries) ->
     fun(JObj, Acc) ->
             Val = wh_json:get_value(<<"value">>, JObj),
             ListId = wh_json:get_value(<<"id">>, Val),
-            ListEntries = wh_json:from_list(
-                            [{wh_json:get_value(<<"_id">>, X), wh_json:public_fields(X)}
-                             || X <- lists:filter(filter_entries_by_list_id(ListId), AllEntries)]),
-            [wh_json:set_value(<<"entries">>, ListEntries, Val)|Acc]
+            ListEntries = lists:filter(filter_entries_by_list_id(ListId), AllEntries),
+            [wh_json:set_value(<<"entries">>, entries_from_list(ListEntries), Val)|Acc]
     end.
 
 -spec filter_entries_by_list_id(ne_binary()) -> fun((wh_json:object()) -> boolean()).
@@ -253,6 +251,12 @@ filter_entries_by_list_id(Id) ->
     fun(Entry) ->
             wh_json:get_value(<<"list_id">>, Entry) =:= Id
     end.
+
+-spec entries_from_list(wh_json:objects()) -> wh_json:object().
+entries_from_list(Entries) ->
+    wh_json:from_list([{wh_json:get_value(<<"_id">>, X), wh_json:public_fields(X)}
+                       || X <- Entries
+                      ]).
 
 -spec load_list(boolean(), cb_context:context(), ne_binary()) -> cb_context:context().
 load_list(false, Context, ListId) ->
@@ -267,7 +271,7 @@ load_list(true, Context, ListId) ->
                                                     ,fun normalize_view_results/2)),
     Context1 = crossbar_doc:load(ListId, Context),
     Doc = cb_context:doc(Context1),
-    Doc1 = wh_json:public_fields(wh_json:set_value(<<"entries">>, Entries, Doc)),
+    Doc1 = wh_json:public_fields(wh_json:set_value(<<"entries">>, entries_from_list(Entries), Doc)),
     cb_context:set_resp_data(Context1, Doc1).
 
 -spec fetch_reduce_limit() -> boolean().
