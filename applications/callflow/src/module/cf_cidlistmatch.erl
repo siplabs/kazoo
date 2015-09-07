@@ -30,7 +30,7 @@
 -spec handle(wh_json:object(), whapps_call:call()) -> 'ok'.
 handle(Data, Call) ->
     CallerIdNumber = whapps_call:caller_id_number(Call),
-    ListId = wh_doc:id(Data),
+    ListId = wh_json:get_value(<<"id">>, Data),
     AccountDb = whapps_call:account_db(Call),
     lager:debug("comparing caller id ~s with match list ~s entries in ~s", [CallerIdNumber, ListId, AccountDb]),
     case is_matching_prefix(AccountDb, ListId, CallerIdNumber)
@@ -55,7 +55,8 @@ is_matching_regexp(AccountDb, ListId, Number) ->
         {'ok', Regexps} ->
             Patterns = [wh_json:get_value(<<"value">>, X) || X <- Regexps],
             match_regexps(Patterns, Number);
-        _ ->
+        Error ->
+            lager:warning("getting regexps error: ~p", [Error]),
             'false'
     end.
 
