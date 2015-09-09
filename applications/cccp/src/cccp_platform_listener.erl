@@ -284,10 +284,9 @@ pin_auth(Call, 'undefined', {'check', Pin}, Attempts) when is_binary(Pin) ->
 pin_auth(_Call, Pin, {'check', Pin}, _Attempts) when is_binary(Pin) ->
     lager:debug("Authorized by pin: ~s", [Pin]),
     'match';
-pin_auth(Call, Pin, {'check', _WrongPin}, Attempts) ->
-    whapps_call_command:b_prompt(cccp_util:invalid_pin(), Call),
-    lager:debug("Wrong pin: ~s", [_WrongPin]),
-    pin_auth(Call, Pin, 'collect', Attempts - 1).
+pin_auth(Call, _Pin, {'check', _WrongPin} = EnteredPin, Attempts) ->
+    lager:debug("Wrong pin ~s, trying as long", [_WrongPin]),
+    pin_auth(Call, 'undefined', EnteredPin, Attempts).
 
 -spec pin_collect(ne_binary(), whapps_call:call()) -> whapps_call_command:b_play_and_collect_digits_return().
 pin_collect(PinPrompt, Call) ->
