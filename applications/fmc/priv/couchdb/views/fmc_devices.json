@@ -4,6 +4,9 @@
     "views": {
         "crossbar_listing": {
             "map": "function(doc) { if (doc.pvt_type != 'fmc_device' || doc.pvt_deleted) return; emit(doc._id, {'id': doc._id, 'account_id':doc.account_id, 'x_fmc_value':doc.x_fmc_value, 'device_id':doc.device_id, 'a_number':doc.a_number}); }"
+        },
+        "by_account_id": {
+            "map": "function(doc) { if (doc.pvt_type != 'fmc_device' || doc.pvt_deleted) return; emit(doc.account_id, doc._id); }"
         }
     }
 }

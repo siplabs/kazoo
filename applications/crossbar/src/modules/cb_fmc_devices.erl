@@ -16,6 +16,7 @@
     ,put/1
     ,post/2
     ,delete/2
+    ,delete_orphaned_fmcs/1
 ]).
 
 -include("../crossbar.hrl").
@@ -38,7 +39,8 @@ init() ->
     _ = crossbar_bindings:bind(<<"*.resource_exists.fmc_devices">>, ?MODULE, 'resource_exists'),
     _ = crossbar_bindings:bind(<<"*.validate.fmc_devices">>, ?MODULE, 'validate'),
     _ = crossbar_bindings:bind(<<"*.execute.put.fmc_devices">>, ?MODULE, 'put'),
-    _ = crossbar_bindings:bind(<<"*.execute.post.fmc_devices">>, ?MODULE, 'post').
+    _ = crossbar_bindings:bind(<<"*.execute.post.fmc_devices">>, ?MODULE, 'post'),
+    _ = crossbar_bindings:bind(<<"account.deleted">>, ?MODULE, 'delete_orphaned_fmcs').
 
 %%--------------------------------------------------------------------
 %% @public
@@ -208,6 +210,18 @@ post(Context, Id) ->
 delete(Context, Id) ->
     {'ok', _} = couch_mgr:del_doc(?WH_FMC_DB, Id),
     cb_context:set_resp_status(Context, 'success').
+
+-spec delete_orphaned_fmcs(cb_context:context()) -> cb_context:context().
+delete_orphaned_fmcs(Context) ->
+    ViewOptions = [{'key', cb_context:account_id(Context)}],
+    case couch_mgr:get_results(?WH_FMC_DB, <<"fmc_devices/by_account_id">>, ViewOptions) of
+        {'ok', JObjs} -> couch_mgr:del_docs(?WH_FMC_DB, lists:map(fun get_doc_id/1, JObjs));
+        _Err -> lager:error("Can not cleanup fmcs for deleted for ~s due to ~p", [cb_context:account_db(Context), _Err])
+    end.
+
+-spec get_doc_id(wh_json:object()) -> ne_binary().
+get_doc_id(JObj) ->
+    wh_json:get_value(<<"value">>, JObj).
 
 %%--------------------------------------------------------------------
 %% @private
