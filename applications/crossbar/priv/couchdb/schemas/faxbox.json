@@ -253,7 +253,7 @@
           "required": false,
           "type": "boolean"
         }
-      }
+      },
       "required": false,
       "type": "object"
     },
