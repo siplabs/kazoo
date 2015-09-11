@@ -220,6 +220,7 @@ originate_call({Id, Type}, Exten, AccountDb) ->
                 ,fun(C) -> whapps_call:set_account_id(wh_util:format_account_id(AccountDb, 'raw'), C) end
                 ,fun(C) -> whapps_call:set_authorizing_id(Id, C) end
                 ,fun(C) -> whapps_call:set_authorizing_type(Type, C) end
+                ,fun(C) -> whapps_call:set_resource_type(<<"audio">>, C) end
                ],
     Call = lists:foldl(fun(F, C) -> F(C) end, whapps_call:new(), Routines),
     case get_endpoints(Call, Id, Type) of
@@ -261,7 +262,7 @@ get_endpoints(Call, EndpointId, <<"device">>) ->
                                     ,{<<"suppress_clid">>, 'true'}
                                    ]),
     case cf_endpoint:build(EndpointId, Properties, Call) of
-        {'error', _} -> [];
+        {'error', _Err} -> lager:warning("error building endpoints: ~p", [_Err]), [];
         {'ok', []} -> [];
         {'ok', Endpoints} -> Endpoints
     end;
