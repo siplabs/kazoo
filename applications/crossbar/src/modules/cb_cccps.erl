@@ -130,13 +130,12 @@ validate_cccp(Context, Id, ?HTTP_DELETE) ->
 
 -spec get_auth_pin(cb_context:context()) -> {'ok', ne_binary()} | {'error', ne_binary()}.
 get_auth_pin(Context) ->
-    CID = wh_json:get_value(<<"cid">>, cb_context:req_data(Context), <<"">>),
+    CID = wh_json:get_value(<<"cid">>, cb_context:req_data(Context), <<"*">>),
     NormalizedCID = wnm_util:normalize_number(CID),
-    PIN = wh_json:get_value(<<"pid">>, cb_context:req_data(Context), <<"">>),
-    AuthPin = iolist_to_binary([NormalizedCID, PIN]),
-    case byte_size(AuthPin) > 0 of
-        'true' -> {'ok', AuthPin};
-        'false' -> {'error', <<"Too short combo of CID & PIN">>}
+    PIN = wh_json:get_value(<<"pin">>, cb_context:req_data(Context), <<"*">>),
+    case [CID, PIN] of
+        [<<"*">>, <<"*">>] -> {'error', <<"Wrong combo of CID & PIN">>};
+        _ -> {'ok', [NormalizedCID, PIN]}
     end.
 
 %%--------------------------------------------------------------------
