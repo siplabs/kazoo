@@ -235,7 +235,7 @@ process_call_to_platform(Call) ->
 -spec authorize(whapps_call:call(), cccp_auth:cccp_auth_ret()) -> cccp_auth:cccp_auth() | 'fail'.
 authorize(Call) ->
     CID = cccp_util:caller_cid(Call),
-    Auth = cccp_auth:authorize(CID, cccp_util:pin_listing()),
+    Auth = cccp_auth:authorize([CID, <<"*">>], cccp_util:pin_listing()),
     authorize(Call, Auth).
 authorize(Call, {'error', 'empty'}) ->
     CID = cccp_util:caller_cid(Call),
@@ -278,15 +278,19 @@ pin_auth(Call, PinType, 'collect', Attempts) ->
 pin_auth(Call, 'short_pin' = PinType, {'check', Pin}, Attempts) when is_binary(Pin) ->
     lager:info("Trying to authorize by pin ~s", [Pin]),
     CID = cccp_util:caller_cid(Call),
-    case cccp_auth:authorize(<<CID/binary, Pin/binary>>, cccp_util:pin_listing()) of
+    case cccp_auth:authorize([CID, Pin], cccp_util:pin_listing()) of
         {'ok', Auth} -> Auth;
         _ ->
-            whapps_call_command:b_prompt(cccp_util:invalid_pin(), Call),
-            pin_auth(Call, PinType, 'collect', Attempts - 1)
+            case cccp_auth:authorize([<<"*">>, Pin], cccp_util:pin_listing()) of
+                {'ok', Auth} -> Auth;
+                _ ->
+                    whapps_call_command:b_prompt(cccp_util:invalid_pin(), Call),
+                    pin_auth(Call, PinType, 'collect', Attempts - 1)
+            end
     end;
 pin_auth(Call, 'long_pin' = PinType, {'check', Pin}, Attempts) when is_binary(Pin) ->
     lager:info("Trying to authorize by pin ~s", [Pin]),
-    case cccp_auth:authorize(Pin, cccp_util:pin_listing()) of
+    case cccp_auth:authorize([<<"*">>, Pin], cccp_util:pin_listing()) of
         {'ok', Auth} -> Auth;
         _ ->
             whapps_call_command:b_prompt(cccp_util:invalid_pin(), Call),
