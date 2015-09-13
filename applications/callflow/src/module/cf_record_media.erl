@@ -35,7 +35,7 @@ handle(Data, Call) ->
                    {'ok', JObj} -> JObj;
                    _Error ->
                        lager:debug("can not open ~s due to ~p, create new", [ExistingMediaId, _Error]),
-                       AutoName = iolist_to_binary(["record_media-", wh_util:current_tstamp()]),
+                       AutoName = iolist_to_binary(["record_media-", wh_util:to_binary(wh_util:current_tstamp())]),
                        DesiredMediaName = wh_json:get_binary_value(<<"name">>, Data, AutoName),
                        new_media_doc(DesiredMediaName, Call)
                end,
