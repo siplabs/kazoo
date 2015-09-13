@@ -39,6 +39,7 @@
          ,privacy/1, privacy_v/1
          ,hold/1, hold_v/1
          ,soft_hold/1, soft_hold_v/1
+         ,flush_media_cache/1, flush_media_cache_v/1
          ,park/1, park_v/1
          ,play_and_collect_digits/1, play_and_collect_digits_v/1
          ,call_pickup/1, call_pickup_v/1
@@ -640,6 +641,21 @@ soft_hold_v(Prop) when is_list(Prop) ->
     wh_api:validate(Prop, ?SOFT_HOLD_REQ_HEADERS, ?SOFT_HOLD_REQ_VALUES, ?SOFT_HOLD_REQ_TYPES);
 soft_hold_v(JObj) ->
     soft_hold_v(wh_json:to_proplist(JObj)).
+
+-spec flush_media_cache(api_terms()) -> api_formatter_return().
+flush_media_cache(Prop) when is_list(Prop) ->
+    case flush_media_cache_v(Prop) of
+        'true' -> wh_api:build_message(Prop, ?FLUSH_MEDIA_REQ_HEADERS, ?OPTIONAL_FLUSH_MEDIA_REQ_HEADERS);
+        'false' -> {'error', "Proplist failed validation for hold_req"}
+    end;
+flush_media_cache(JObj) ->
+    flush_media_cache(wh_json:to_proplist(JObj)).
+
+-spec flush_media_cache_v(api_terms()) -> boolean().
+flush_media_cache_v(Prop) when is_list(Prop) ->
+    wh_api:validate(Prop, ?FLUSH_MEDIA_REQ_HEADERS, ?FLUSH_MEDIA_REQ_VALUES, ?FLUSH_MEDIA_REQ_TYPES);
+flush_media_cache_v(JObj) ->
+    flush_media_cache_v(wh_json:to_proplist(JObj)).
 
 %%--------------------------------------------------------------------
 %% @doc Hold a call - see wiki
