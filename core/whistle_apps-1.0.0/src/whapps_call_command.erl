@@ -27,6 +27,7 @@
         ]).
 
 -export([audio_macro/2]).
+-export([flush_media_cache/2]).
 -export([pickup/2, pickup/3, pickup/4, pickup/5, pickup/6
          ,pickup_command/2, pickup_command/3, pickup_command/4, pickup_command/5, pickup_command/6
          ,b_pickup/2, b_pickup/3, b_pickup/4, b_pickup/5, b_pickup/6
@@ -475,6 +476,19 @@ response(Code, Cause, Call) ->
     response(Code, Cause, 'undefined', Call).
 response(Code, Cause, Media, Call) ->
     wh_call_response:send(Call, Code, Cause, Media).
+
+%%--------------------------------------------------------------------
+%% @public
+%% @doc
+%% @end
+%%--------------------------------------------------------------------
+-spec flush_media_cache(ne_binary(), whapps_call:call()) -> 'ok'.
+flush_media_cache(Media, Call) ->
+    Command = [{<<"Media-Name">>, Media}
+               ,{<<"Application-Name">>, <<"flush_media_cache">>}
+               ,{<<"Insert-At">>, <<"now">>}
+              ],
+    send_command(Command, Call).
 
 %%--------------------------------------------------------------------
 %% @public

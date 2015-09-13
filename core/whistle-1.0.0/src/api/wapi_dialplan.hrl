@@ -356,6 +356,16 @@
                               ]).
 -define(SOFT_HOLD_REQ_TYPES, []).
 
+%% Flush media cache on FS
+-define(FLUSH_MEDIA_REQ_HEADERS, [<<"Application-Name">>, <<"Media-Name">>]).
+-define(OPTIONAL_FLUSH_MEDIA_REQ_HEADERS, [<<"Insert-At">>, <<"Call-ID">>]).
+-define(FLUSH_MEDIA_REQ_VALUES, [{<<"Event-Category">>, <<"call">>}
+                               ,{<<"Event-Name">>, <<"command">>}
+                               ,{<<"Application-Name">>, <<"flush_media_cache">>}
+                               ,?INSERT_AT_TUPLE
+                              ]).
+-define(FLUSH_MEDIA_REQ_TYPES, []).
+
 %% Park
 -define(PARK_REQ_HEADERS, [<<"Application-Name">>, <<"Call-ID">>]).
 -define(OPTIONAL_PARK_REQ_HEADERS, [<<"Insert-At">>, <<"Timeout">>, <<"Hangup-Cause">>]).

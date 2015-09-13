@@ -44,8 +44,6 @@
 -include_lib("whistle/src/api/wapi_dialplan.hrl").
 -include("ecallmgr.hrl").
 
--define(HTTP_GET_PREFIX, "http_cache://").
-
 -type send_cmd_ret() :: fs_sendmsg_ret() | fs_api_ret().
 -export_type([send_cmd_ret/0]).
 
@@ -112,6 +110,12 @@ send_cmd(Node, UUID, "conference", Args) ->
 send_cmd(Node, _UUID, "transfer", Args) ->
     lager:debug("transfering on ~s: ~s", [Node, Args]),
     freeswitch:api(Node, 'uuid_transfer', wh_util:to_list(Args));
+send_cmd(_Node, _UUID, "http_cache_remove", Args) ->
+    lager:debug("removing http cache for ~s on all nodes", [Args]),
+    _ = [freeswitch:api(Node, 'http_cache_remove', wh_util:to_list(Args))
+         || Node <- ecallmgr_fs_nodes:connected()
+        ],
+    'ok';
 send_cmd(Node, UUID, AppName, Args) ->
     Result = freeswitch:sendmsg(Node, UUID, [{"call-command", "execute"}
                                              ,{"execute-app-name", AppName}

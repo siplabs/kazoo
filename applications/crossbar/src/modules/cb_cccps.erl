@@ -106,12 +106,18 @@ validate(Context, Id) ->
 -spec validate_cccps(cb_context:context(), http_method()) -> cb_context:context().
 validate_cccps(Context, ?HTTP_GET) ->
     summary(Context);
-validate_cccps(#cb_context{req_data=ReqData}=Context, ?HTTP_PUT) ->
-    case wh_json:get_value(<<"cid">>, ReqData) of
-        'undefined' ->
-            check_pin(Context);
-        _ ->
-            check_cid(Context)
+validate_cccps(Context, ?HTTP_PUT) ->
+    case get_auth_pin(Context) of
+        {'ok', AuthPin} -> check_pin(AuthPin, Context);
+        {'error', Msg} ->
+            cb_context:add_validation_error(
+                <<"cccp">>
+                ,<<"unique">>
+                ,wh_json:from_list([
+                    {<<"message">>, Msg}
+                 ])
+                ,Context
+            )
     end.
 
 -spec validate_cccp(cb_context:context(), path_token(), http_method()) -> cb_context:context().
@@ -121,6 +127,16 @@ validate_cccp(Context, Id, ?HTTP_POST) ->
     update(Id, Context);
 validate_cccp(Context, Id, ?HTTP_DELETE) ->
     read(Id, Context).
+
+-spec get_auth_pin(cb_context:context()) -> {'ok', ne_binary()} | {'error', ne_binary()}.
+get_auth_pin(Context) ->
+    CID = wh_json:get_value(<<"cid">>, cb_context:req_data(Context), <<"*">>),
+    NormalizedCID = wnm_util:normalize_number(CID),
+    PIN = wh_json:get_value(<<"pin">>, cb_context:req_data(Context), <<"*">>),
+    case [CID, PIN] of
+        [<<"*">>, <<"*">>] -> {'error', <<"Wrong combo of CID & PIN">>};
+        _ -> {'ok', [NormalizedCID, PIN]}
+    end.
 
 %%--------------------------------------------------------------------
 %% @public
@@ -249,9 +265,9 @@ normalize_view_results(JObj, Acc) ->
 %% @end
 %%--------------------------------------------------------------------
 
--spec check_pin(cb_context:context()) -> cb_context:context().
-check_pin(Context) ->
-    case unique_pin(Context) of
+-spec check_pin(ne_binary(), cb_context:context()) -> cb_context:context().
+check_pin(AuthPin, Context) ->
+    case unique_pin(AuthPin) of
         {'error', 'empty'} -> create(Context);
         _ ->
             cb_context:add_validation_error(
@@ -259,49 +275,12 @@ check_pin(Context) ->
                 ,<<"unique">>
                 ,wh_json:from_list([
                     {<<"message">>, <<"Pin already exists">>}
+                    ,{<<"cause">>, AuthPin}
                  ])
                 ,Context
             )
     end.
 
--spec check_cid(cb_context:context()) -> cb_context:context().
-check_cid(#cb_context{req_data=ReqData}=Context) ->
-    CID = wh_json:get_value(<<"cid">>, ReqData),
-    case wnm_util:is_reconcilable(CID) of
-        'false' ->
-            cb_context:add_validation_error(
-                <<"cccp">>
-                ,<<"unique">>
-                ,wh_json:from_list([
-                    {<<"message">>, <<"Number is non reconcilable">>}
-                    ,{<<"cause">>, CID}
-                 ])
-                ,Context
-            );
-        'true' ->
-            ReqData2 = wh_json:set_value(<<"cid">>, wnm_util:normalize_number(CID), ReqData),
-            Context2 = Context#cb_context{req_data=ReqData2},
-            case unique_cid(Context2) of
-                {'error', 'empty'} -> create(Context2);
-                _ ->
-                    cb_context:add_validation_error(
-                        <<"cccp">>
-                        ,<<"unique">>
-                        ,wh_json:from_list([
-                            {<<"message">>, <<"CID already exists">>}
-                            ,{<<"cause">>, CID}
-                         ])
-                        ,Context
-                    )
-            end
-
-    end.
--spec unique_cid(cb_context:context()) -> cccp_auth:cccp_auth_ret().
-unique_cid(#cb_context{req_data=ReqData}) ->
-    CID = wh_json:get_value(<<"cid">>, ReqData),
-    cccp_auth:authorize(CID, <<"cccps/cid_listing">>).
-
--spec unique_pin(cb_context:context()) -> cccp_auth:cccp_auth_ret().
-unique_pin(#cb_context{req_data=ReqData}) ->
-    Pin = wh_json:get_value(<<"pin">>, ReqData),
-    cccp_auth:authorize(Pin, <<"cccps/pin_listing">>).
+-spec unique_pin(ne_binary()) -> cccp_auth:cccp_auth_ret().
+unique_pin(AuthPin) ->
+    cccp_auth:authorize(AuthPin, <<"cccps/pin_listing">>).

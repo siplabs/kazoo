@@ -543,6 +543,16 @@ get_fs_app(_Node, _UUID, JObj, <<"fax_detection">>) ->
             end
     end;
 
+get_fs_app(_Node, UUID, JObj, <<"flush_media_cache">>) ->
+    MediaName = wh_json:get_value(<<"Media-Name">>, JObj),
+    lager:info("Got media: ~s", [MediaName]),
+    CachedUrl =  case ecallmgr_util:media_path(MediaName, 'new', UUID, JObj) of
+                    <<?HTTP_GET_PREFIX, URL/binary>> -> URL;
+                    Else -> Else
+                end,
+    lager:info("flush cache on all nodes for ~s", [_Node, CachedUrl]),
+    {<<"http_cache_remove">>, CachedUrl};
+
 get_fs_app(_Node, _UUID, _JObj, _App) ->
     lager:debug("unknown application ~s", [_App]),
     {'error', <<"application unknown">>}.

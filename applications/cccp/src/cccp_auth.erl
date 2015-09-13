@@ -15,7 +15,6 @@
          ,account_id/1
          ,outbound_cid/1
          ,auth_doc_id/1
-         ,pin/1
         ]).
 
 -export_type([cccp_auth/0
@@ -27,7 +26,6 @@
 -record(auth, {account_id :: ne_binary()
                ,outbound_cid = ?DEFAULT_CALLER_ID :: ne_binary()
                ,auth_doc_id :: ne_binary()
-               ,pin :: api_binary()
               }).
 
 -type cccp_auth() :: #auth{}.
@@ -49,10 +47,6 @@ outbound_cid(#auth{outbound_cid = CID}) ->
 auth_doc_id(#auth{auth_doc_id = AuthId}) ->
     AuthId.
 
--spec pin(cccp_auth()) -> api_binary().
-pin(#auth{pin = Pin}) ->
-    Pin.
-
 -spec authorize(ne_binary(), ne_binary()) -> cccp_auth_ret().
 authorize(Value, View) ->
     ViewOptions = [{'key', Value}],
@@ -63,7 +57,6 @@ authorize(Value, View) ->
         {'ok', [JObj]} ->
             maybe_legalize_outbound_cid(#auth{account_id = wh_json:get_value([<<"value">>,<<"account_id">>], JObj)
                                              ,auth_doc_id = wh_json:get_value([<<"value">>,<<"id">>], JObj)
-                                             ,pin = wh_json:get_value([<<"value">>,<<"pin">>], JObj)
                                              }
                                         ,wh_json:get_value([<<"value">>,<<"outbound_cid">>], JObj)
                                        );

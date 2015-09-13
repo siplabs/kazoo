@@ -235,22 +235,24 @@ process_call_to_platform(Call) ->
 -spec authorize(whapps_call:call(), cccp_auth:cccp_auth_ret()) -> cccp_auth:cccp_auth() | 'fail'.
 authorize(Call) ->
     CID = cccp_util:caller_cid(Call),
-    Auth = cccp_auth:authorize(CID, cccp_util:cid_listing()),
+    Auth = cccp_auth:authorize([CID, <<"*">>], cccp_util:pin_listing()),
     authorize(Call, Auth).
 authorize(Call, {'error', 'empty'}) ->
-    pin_auth(Call, 'undefined');
-authorize(_Call, {'error', _Err}) ->
+    CID = cccp_util:caller_cid(Call),
+    ViewOptions = [{'key', CID}],
+    PinType = case couch_mgr:get_results(?KZ_CCCPS_DB, cccp_util:cid_listing(), ViewOptions) of
+                  {'ok', []} -> 'long_pin';
+                  {'ok', _} -> 'short_pin';
+                  {'error', _Err} ->
+                      lager:error("can't lookup auth by cid ~s, use long pin", [CID]),
+                      'long_pin'
+              end,
+    pin_auth(Call, PinType);
+authorize(Call, {'error', _Err}) ->
     lager:error("Can't authorize coz of ~p", [_Err]),
-    'fail';
-authorize(Call, {'ok', Auth}) ->
-    Ret = case cccp_auth:pin(Auth) of
-              'undefined' -> Auth;
-              Pin when is_binary(Pin) -> pin_auth(Call, Pin)
-          end,
-    case Ret of
-        'match' -> Auth;
-        _ -> Ret
-    end.
+    pin_auth(Call, 'undefined');
+authorize(_Call, {'ok', Auth}) ->
+    Auth.
 
 -spec pin_auth(whapps_call:call(), api_binary()) -> cccp_auth:cccp_auth() | 'fail' | 'match'.
 -spec pin_auth(whapps_call:call(), api_binary(), term(), integer()) -> cccp_auth:cccp_auth() | 'fail' | 'match'.
@@ -260,33 +262,40 @@ pin_auth(Call, _Pin, _State, Attempts) when Attempts =< 0 ->
     cccp_blocking:block_cid(cccp_util:caller_cid(Call)),
     whapps_call_command:b_prompt(cccp_util:retries_exceeded(), Call),
     'fail';
-pin_auth(Call, Pin, 'collect', Attempts) ->
-    PinPrompt = case Pin of
-                    'undefined' -> cccp_util:request_long_pin();
-                    _ -> cccp_util:request_short_pin()
+pin_auth(Call, PinType, 'collect', Attempts) ->
+    PinPrompt = case PinType of
+                    'long_pin' -> cccp_util:request_long_pin();
+                    'short_pin' -> cccp_util:request_short_pin()
                 end,
     case pin_collect(PinPrompt, Call) of
         {'ok', EnteredPin} ->
             lager:debug("Checking ~p", [EnteredPin]),
-            pin_auth(Call, Pin, {'check', EnteredPin}, Attempts);
+            pin_auth(Call, PinType, {'check', EnteredPin}, Attempts);
         {'error', Err} ->
             lager:error("Can't collect pin: ~p", [Err]),
-            pin_auth(Call, Pin, 'collect', Attempts - 1)
+            pin_auth(Call, PinType, 'collect', Attempts - 1)
     end;
-pin_auth(Call, 'undefined', {'check', Pin}, Attempts) when is_binary(Pin) ->
-    lager:debug("Trying to authorize by pin ~s", [Pin]),
-    case cccp_auth:authorize(Pin, cccp_util:pin_listing()) of
+pin_auth(Call, 'short_pin' = PinType, {'check', Pin}, Attempts) when is_binary(Pin) ->
+    lager:info("Trying to authorize by pin ~s", [Pin]),
+    CID = cccp_util:caller_cid(Call),
+    case cccp_auth:authorize([CID, Pin], cccp_util:pin_listing()) of
+        {'ok', Auth} -> Auth;
+        _ ->
+            case cccp_auth:authorize([<<"*">>, Pin], cccp_util:pin_listing()) of
+                {'ok', Auth} -> Auth;
+                _ ->
+                    whapps_call_command:b_prompt(cccp_util:invalid_pin(), Call),
+                    pin_auth(Call, PinType, 'collect', Attempts - 1)
+            end
+    end;
+pin_auth(Call, 'long_pin' = PinType, {'check', Pin}, Attempts) when is_binary(Pin) ->
+    lager:info("Trying to authorize by pin ~s", [Pin]),
+    case cccp_auth:authorize([<<"*">>, Pin], cccp_util:pin_listing()) of
         {'ok', Auth} -> Auth;
         _ ->
             whapps_call_command:b_prompt(cccp_util:invalid_pin(), Call),
-            pin_auth(Call, 'undefined', 'collect', Attempts - 1)
-    end;
-pin_auth(_Call, Pin, {'check', Pin}, _Attempts) when is_binary(Pin) ->
-    lager:debug("Authorized by pin: ~s", [Pin]),
-    'match';
-pin_auth(Call, _Pin, {'check', _WrongPin} = EnteredPin, Attempts) ->
-    lager:debug("Wrong pin ~s, trying as long", [_WrongPin]),
-    pin_auth(Call, 'undefined', EnteredPin, Attempts).
+            pin_auth(Call, PinType, 'collect', Attempts - 1)
+    end.
 
 -spec pin_collect(ne_binary(), whapps_call:call()) -> whapps_call_command:b_play_and_collect_digits_return().
 pin_collect(PinPrompt, Call) ->

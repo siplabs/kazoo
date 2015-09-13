@@ -23,6 +23,7 @@
 -define(DEFAULT_FS_DIALPLAN, "XML").
 
 -define(LOCAL_MEDIA_PATH, "/tmp/").
+-define(HTTP_GET_PREFIX, "http_cache://").
 
 -define(DEFAULT_SAMPLE_RATE, ecallmgr_config:get_integer(<<"record_sample_rate">>, 8000)).
 
