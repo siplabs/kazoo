@@ -46,3 +46,13 @@ These parameters can be set in (first one that's set wins)
 * * `vm_notify_callback_timeout` in ananke's system config (default 20)
 
 Also you can set `originartor_type` to define channel variable.
+
+Note: for automatic  `mailbox` number detection `single_mailbox_login=true` must be set in voicemail callflow module and user should use only one voice mailbox.
+
+How it works (brief version):
+- after checking conditions (checking if called party is not disabled) we look for voicemail checking callflow.
+- after that it checks that there are no notifications planned for this vmbox yet
+- if there are planned notifications, nothing is done
+- if not - the call is planned after given timeout
+- if call attempt was successful - there will be no further notifications
+- if call was not answered/was not successul and number of tries doesn't exceed limit, the next call is planned
