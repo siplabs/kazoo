@@ -21,6 +21,7 @@
 -export([handle/2]).
 
 -define(SOURCE_TYPE, <<"cf_record_media">>).
+-define(RECORD_EXTENSION, whapps_config:get(<<"media">>, [<<"call_recording">>, <<"extension">>], <<"mp3">>)).
 
 %%--------------------------------------------------------------------
 %% @public
@@ -35,18 +36,26 @@ handle(Data, Call) ->
                    {'ok', JObj} -> JObj;
                    _Error ->
                        lager:debug("can not open ~s due to ~p, create new", [ExistingMediaId, _Error]),
-                       AutoName = iolist_to_binary(["record_media-", wh_util:to_binary(wh_util:current_tstamp())]),
+                       AutoName = tmp_file(),
                        DesiredMediaName = wh_json:get_binary_value(<<"name">>, Data, AutoName),
                        new_media_doc(DesiredMediaName, Call)
                end,
     lager:info("MediaDoc: ~p", [MediaDoc]),
-    MediaName = wh_json:get_value(<<"name">>, MediaDoc),
+    MediaName = tmp_file(),
     case whapps_call_command:b_record(MediaName, ?ANY_DIGIT, Call) of
         {'ok', _} -> save_media(MediaName, MediaDoc, Call);
         'ok' -> save_media(MediaName, MediaDoc, Call);
         _Else -> leger:error("can not record media due to ~p", [_Else])
     end,
     cf_exe:continue(Call).
+
+-spec tmp_file() -> ne_binary().
+tmp_file() ->
+    iolist_to_binary(["record_media-"
+                      ,wh_util:to_binary(wh_util:current_tstamp())
+                      ,"."
+                      ,?RECORD_EXTENSION
+                     ]).
 
 -spec save_media(ne_binary(), wh_json:object(), whapps_call:call()) -> 'ok'.
 save_media(MediaName, MediaDoc, Call) ->
@@ -58,8 +67,7 @@ save_media(MediaName, MediaDoc, Call) ->
     end,
     {'ok', AttachmentUrl} = wh_media_url:store(whapps_call:account_db(Call), wh_doc:id(MediaDoc), MediaName),
     lager:info("store to ~s", [AttachmentUrl]),
-    whapps_call_command:b_store(MediaName, AttachmentUrl, Call),
-    whapps_call_command:flush_media_cache(wh_media_util:media_path(wh_doc:id(MediaDoc), whapps_call:account_id(Call)), Call).
+    whapps_call_command:b_store(MediaName, AttachmentUrl, Call).
 
 -spec new_media_doc(ne_binary(), whapps_call:call()) -> ne_binary().
 new_media_doc(Name, Call) ->
