@@ -20,7 +20,6 @@
                ,callback_number
                ,is_callback_disabled
                ,vm_number
-               ,mailbox
                ,attempts
                ,interval
                ,call_timeout
@@ -52,7 +51,7 @@ handle_req(JObj, _Props) ->
             {'ok', AccountJObj} = couch_mgr:open_cache_doc(?WH_ACCOUNTS_DB, AccountId),
 
             Mailbox = wh_json:get_value(<<"mailbox">>, VMBoxJObj),
-            VMNumber = get_voicemail_number(AccountDb),
+            VMNumber = get_voicemail_number(AccountDb, Mailbox),
             Number = get_first_defined([{<<"notify_callback_number">>, VMBoxJObj}
                                         ,{<<"vm_notify_callback_number">>, UserJObj}]),
             IsDisabled = wh_util:is_true(
@@ -69,7 +68,6 @@ handle_req(JObj, _Props) ->
                               ,callback_number = Number
                               ,is_callback_disabled = IsDisabled
                               ,vm_number = VMNumber
-                              ,mailbox = Mailbox
                               ,attempts = Attempts
                               ,interval = Interval
                               ,call_timeout = CallTimeout
@@ -78,14 +76,14 @@ handle_req(JObj, _Props) ->
             maybe_start_caller(StartArgs)
     end.
 
--spec get_voicemail_number(ne_binary()) -> ne_binary() | 'undefined'.
-get_voicemail_number(AccountDb) ->
+-spec get_voicemail_number(ne_binary(), ne_binary()) -> ne_binary() | 'undefined'.
+get_voicemail_number(AccountDb, Mailbox) ->
     {'ok', Callflows} = couch_mgr:get_results(AccountDb
                                               ,<<"callflows/crossbar_listing">>
                                              ,[{<<"include_docs">>, 'true'}]),
     case [Cf || Cf <- Callflows, is_voicemail_cf(Cf)] of
         [VMCallflow | _] ->
-            get_callflow_number(VMCallflow);
+            get_callflow_number(VMCallflow, Mailbox);
         [] ->
             'undefined'
     end.
@@ -112,8 +110,8 @@ get_cf_flow(JObj) ->
         FlowJObj -> FlowJObj
     end.
 
--spec get_callflow_number(wh_json:object()) -> 'undefined' | ne_binary().
-get_callflow_number(Callflow) ->
+-spec get_callflow_number(wh_json:object(), ne_binary()) -> 'undefined' | ne_binary().
+get_callflow_number(Callflow, _Mailbox) ->
     case wh_json:get_value([<<"doc">>, <<"numbers">>], Callflow, ['undefined']) of
         [] -> 'undefined';
         [Number | _] -> Number
@@ -154,18 +152,12 @@ build_originate_req(#args{callback_number = CallbackNumber
                           ,account_id = AccountId
                           ,user_id = UserId
                           ,call_timeout = Timeout
-                          ,mailbox = Mailbox
                           ,originator_type = OrigType
                          }) ->
-    CalleeName = <<"Voicemail">>,
-    CalleeNumber = CallbackNumber,
-    CallerName = <<"Voicemail">>,
-    CallerNumber = VMNumber,
 
     CustomChannelVars = wh_json:from_list([{<<"Account-ID">>, AccountId}
                                            ,{<<"Owner-ID">>, UserId}
                                            ,{<<"AutoAnswer">>, 'true'}
-                                           ,{<<"Retain-CID">>, 'true'}
                                            ,{<<"Authorizing-ID">>, UserId}
                                            ,{<<"Inherit-Codec">>, <<"false">>}
                                            ,{<<"Authorizing-Type">>, <<"user">>}
@@ -174,8 +166,7 @@ build_originate_req(#args{callback_number = CallbackNumber
 
     Endpoint = [{<<"Invite-Format">>, <<"loopback">>}
                 ,{<<"Route">>, CallbackNumber}
-                ,{<<"Custom-Channel-Vars">>
-                  ,wh_json:set_value(<<"Caller-ID-Number">>, Mailbox, CustomChannelVars)}
+                ,{<<"Custom-Channel-Vars">>, CustomChannelVars}
                ],
 
     ApplicationName = <<"transfer">>,
@@ -186,17 +177,13 @@ build_originate_req(#args{callback_number = CallbackNumber
     R=[{<<"Timeout">>, Timeout}
        ,{<<"Application-Name">>, ApplicationName}
        ,{<<"Application-Data">>, ApplicationData}
-       ,{<<"Outbound-Callee-ID-Name">>, CalleeName}
-       ,{<<"Outbound-Callee-ID-Number">>, CalleeNumber}
-       ,{<<"Outbound-Caller-ID-Name">>, CallerName}
-       ,{<<"Outbound-Caller-ID-Number">>, CallerNumber}
        ,{<<"Originate-Immediate">>, 'true'}
        ,{<<"Ignore-Early-Media">>, 'true'}
        ,{<<"Endpoints">>, [wh_json:from_list(Endpoint)]}
        ,{<<"Dial-Endpoint-Method">>, <<"single">>}
        ,{<<"Continue-On-Fail">>, 'false'}
        ,{<<"Custom-Channel-Vars">>, CustomChannelVars}
-       ,{<<"Export-Custom-Channel-Vars">>, [<<"Account-ID">>, <<"Retain-CID">>
+       ,{<<"Export-Custom-Channel-Vars">>, [<<"Account-ID">>
                                            ,<<"Authorizing-ID">>, <<"Authorizing-Type">>
                                            ,<<"Owner-ID">>, <<"Originator-Type">>]}
        | wh_api:default_headers(<<"resource">>, <<"originate_req">>, ?APP_NAME, ?APP_VERSION)
