@@ -550,7 +550,7 @@ get_fs_app(_Node, UUID, JObj, <<"flush_media_cache">>) ->
                     <<?HTTP_GET_PREFIX, URL/binary>> -> URL;
                     Else -> Else
                 end,
-    lager:info("flush cache on all nodes for ~s", [_Node, CachedUrl]),
+    lager:info("flush cache on all nodes for ~s", [CachedUrl]),
     {<<"http_cache_remove">>, CachedUrl};
 
 get_fs_app(_Node, _UUID, _JObj, _App) ->
