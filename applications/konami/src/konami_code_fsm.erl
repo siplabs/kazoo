@@ -425,13 +425,18 @@ maybe_handle_aleg_code(#state{numbers=Ns
                               ,patterns=Ps
                               ,a_collected_dtmf = Collected
                               ,call=Call
+                              ,other_leg = OtherLegCallId
                               ,call_id=CallId
                              }) ->
     lager:debug("a DTMF timeout, let's check '~s'", [Collected]),
+    Setters = [{fun whapps_call:set_call_id/2, CallId}
+               ,{fun whapps_call:set_other_leg_call_id/2, OtherLegCallId}
+              ],
+    Call1 = whapps_call:exec(Setters, Call),
     case has_metaflow(Collected, Ns, Ps) of
         'false' -> lager:debug("no handler for '~s', unarming", [Collected]);
-        {'number', N} -> handle_number_metaflow(Call, N, CallId);
-        {'pattern', P} -> handle_pattern_metaflow(Call, P, CallId)
+        {'number', N} -> handle_number_metaflow(Call1, N, CallId);
+        {'pattern', P} -> handle_pattern_metaflow(Call1, P, CallId)
     end.
 
 -spec maybe_handle_bleg_code(state()) -> 'ok'.
@@ -574,6 +579,29 @@ handle_channel_bridge(#state{call_id=CallId
     State#state{call=whapps_call:set_other_leg_call_id(OtherLeg, Call)
                 ,other_leg=OtherLeg
                };
+handle_channel_bridge(#state{other_leg='undefined'
+                             ,listen_on=ListenOn
+                             ,call=Call
+                            } = State
+                      ,CallId
+                      ,CallId
+                     ) when ListenOn =:= 'a' orelse ListenOn =:= 'ab' ->
+    lager:info("'a' leg has bridged to self..."),
+    State#state{call=whapps_call:set_other_leg_call_id(CallId, Call)
+                ,other_leg=CallId
+               };
+handle_channel_bridge(#state{call_id=CallId
+                             ,other_leg= CallId
+                             ,call=Call
+                            } = State
+                      ,CallId
+                      ,OtherLeg
+                     ) ->
+    lager:info("'a' leg has bridged to other leg ~s... following", [OtherLeg]),
+    konami_event_listener:add_call_binding(OtherLeg),
+    State#state{call=whapps_call:set_other_leg_call_id(OtherLeg, Call)
+                ,other_leg=OtherLeg
+               };
 handle_channel_bridge(#state{other_leg='undefined'}
                       ,_CallId
                       ,_OtherLeg
@@ -599,7 +627,28 @@ handle_channel_bridge(#state{call_id=_CallId
     lager:debug("our 'b' leg ~s bridged to ~s instead of ~s", [OtherLeg, UUID, _CallId]),
     State#state{call_id=UUID
                 ,call=whapps_call:set_call_id(UUID, Call)
-               }.
+               };
+handle_channel_bridge(#state{call_id=_CallId
+                             ,other_leg=OtherLeg
+                            }=State
+                      ,UUID
+                      ,UUID
+                     ) ->
+    lager:info("got self-bridge to ~s while on ~s and ~s", [UUID, _CallId, OtherLeg]),
+    konami_event_listener:rm_call_binding(_CallId),
+    konami_event_listener:rm_call_binding(OtherLeg),
+    konami_event_listener:add_call_binding(UUID),
+    State#state{other_leg = UUID
+                ,call_id = UUID
+               };
+handle_channel_bridge(#state{call_id=_CallId
+                             ,other_leg=OtherLeg
+                            }=State
+                      ,UUID1
+                      ,UUID2
+                     ) ->
+    lager:info("unhandled bridge beetwen ~s and ~s while on ~s and ~s", [UUID1, UUID2, _CallId, OtherLeg]),
+    State.
 
 -spec handle_channel_destroy(state(), ne_binary()) -> state().
 handle_channel_destroy(#state{call_id=CallId
