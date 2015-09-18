@@ -24,6 +24,7 @@
                ,interval
                ,call_timeout
                ,originator_type
+               ,realm
               }).
 
 -spec init() -> 'ok'.
@@ -50,6 +51,8 @@ handle_req(JObj, _Props) ->
             {'ok', UserJObj} = couch_mgr:open_cache_doc(AccountDb, UserId),
             {'ok', AccountJObj} = couch_mgr:open_cache_doc(?WH_ACCOUNTS_DB, AccountId),
 
+            Realm = wh_json:get_value(<<"To-Realm">>, JObj),
+
             Mailbox = wh_json:get_value(<<"mailbox">>, VMBoxJObj),
             VMNumber = get_voicemail_number(AccountDb, Mailbox),
             Number = get_first_defined([{<<"notify_callback_number">>, VMBoxJObj}
@@ -72,6 +75,7 @@ handle_req(JObj, _Props) ->
                               ,interval = Interval
                               ,call_timeout = CallTimeout
                               ,originator_type = OrigType
+                              ,realm = Realm
                              },
             maybe_start_caller(StartArgs)
     end.
@@ -153,6 +157,7 @@ build_originate_req(#args{callback_number = CallbackNumber
                           ,user_id = UserId
                           ,call_timeout = Timeout
                           ,originator_type = OrigType
+                          ,realm = Realm
                          }) ->
 
     CustomChannelVars = wh_json:from_list([{<<"Account-ID">>, AccountId}
@@ -162,6 +167,11 @@ build_originate_req(#args{callback_number = CallbackNumber
                                            ,{<<"Inherit-Codec">>, <<"false">>}
                                            ,{<<"Authorizing-Type">>, <<"user">>}
                                            ,{<<"Originator-Type">>, OrigType}
+                                           ,{<<"Realm">>, Realm}
+                                           ,{<<"Account-Realm">>, Realm}
+                                           ,{<<"From-Realm">>, Realm}
+                                           ,{<<"Format-From-URI">>, <<"true">>}
+                                           ,{<<"From-URI-Realm">>, Realm}
                                           ]),
 
     Endpoint = [{<<"Invite-Format">>, <<"loopback">>}
@@ -183,7 +193,7 @@ build_originate_req(#args{callback_number = CallbackNumber
        ,{<<"Dial-Endpoint-Method">>, <<"single">>}
        ,{<<"Continue-On-Fail">>, 'false'}
        ,{<<"Custom-Channel-Vars">>, CustomChannelVars}
-       ,{<<"Export-Custom-Channel-Vars">>, [<<"Account-ID">>
+       ,{<<"Export-Custom-Channel-Vars">>, [<<"Account-ID">>, <<"Account-Realm">>
                                            ,<<"Authorizing-ID">>, <<"Authorizing-Type">>
                                            ,<<"Owner-ID">>, <<"Originator-Type">>]}
        | wh_api:default_headers(<<"resource">>, <<"originate_req">>, ?APP_NAME, ?APP_VERSION)
