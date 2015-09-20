@@ -192,6 +192,7 @@ build_originate_req(#args{callback_number = CallbackNumber
        ,{<<"Endpoints">>, [wh_json:from_list(Endpoint)]}
        ,{<<"Dial-Endpoint-Method">>, <<"single">>}
        ,{<<"Continue-On-Fail">>, 'false'}
+       ,{<<"Simplify-Loopback">>, 'true'}
        ,{<<"Custom-Channel-Vars">>, CustomChannelVars}
        ,{<<"Export-Custom-Channel-Vars">>, [<<"Account-ID">>, <<"Account-Realm">>
                                            ,<<"Authorizing-ID">>, <<"Authorizing-Type">>
