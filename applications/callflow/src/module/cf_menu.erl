@@ -309,7 +309,7 @@ play_invalid_prompt(#cf_menu_data{invalid_media='false'}, _) ->
 play_invalid_prompt(#cf_menu_data{invalid_media='true'}, Call) ->
     whapps_call_command:b_prompt(<<"menu-invalid_entry">>, Call);
 play_invalid_prompt(#cf_menu_data{invalid_media=Id}, Call) ->
-    whapps_call_command:b_play(<<$/, (whapps_call:account_db(Call))/binary, $/, Id/binary>>, Call).
+    whapps_call_command:b_play(wh_media_util:media_path(Id, Call), Call).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -325,7 +325,7 @@ play_transferring_prompt(#cf_menu_data{transfer_media='false'}, _) ->
 play_transferring_prompt(#cf_menu_data{transfer_media='true'}, Call) ->
     whapps_call_command:b_prompt(<<"menu-transferring_call">>, Call);
 play_transferring_prompt(#cf_menu_data{transfer_media=Id}, Call) ->
-    whapps_call_command:b_play(<<$/, (whapps_call:account_db(Call))/binary, $/, Id/binary>>, Call).
+    whapps_call_command:b_play(wh_media_util:media_path(Id, Call), Call).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -341,7 +341,7 @@ play_exit_prompt(#cf_menu_data{exit_media='false'}, _) ->
 play_exit_prompt(#cf_menu_data{exit_media='true'}, Call) ->
     whapps_call_command:b_prompt(<<"menu-exit">>, Call);
 play_exit_prompt(#cf_menu_data{exit_media=Id}, Call) ->
-    whapps_call_command:b_play(<<$/, (whapps_call:account_db(Call))/binary, $/, Id/binary>>, Call).
+    whapps_call_command:b_play(wh_media_util:media_path(Id, Call), Call).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -352,10 +352,8 @@ play_exit_prompt(#cf_menu_data{exit_media=Id}, Call) ->
 -spec get_prompt(menu(), whapps_call:call()) -> ne_binary().
 get_prompt(#cf_menu_data{greeting_id='undefined'}, Call) ->
     wh_media_util:get_prompt(<<"menu-no_prompt">>, Call);
-get_prompt(#cf_menu_data{greeting_id = <<"local_stream://", _/binary>> = ID}, _) ->
-    ID;
-get_prompt(#cf_menu_data{greeting_id=Id}, Call) ->
-    <<$/, (whapps_call:account_db(Call))/binary, $/, Id/binary>>.
+get_prompt(#cf_menu_data{greeting_id = Greeting}, Call) ->
+    wh_media_util:media_path(Greeting, Call).
 
 %%--------------------------------------------------------------------
 %% @private
