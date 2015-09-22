@@ -36,6 +36,15 @@
                              ]).
 -define(UNBRIDGE_REQ_TYPES, []).
 
+-define(TRANSFER_REQ_HEADERS, [<<"Call-ID">>, <<"Application-Name">>, <<"Extension">>, <<"Leg">>]).
+-define(OPTIONAL_TRANSFER_REQ_HEADERS, [<<"Insert-At">>]).
+-define(TRANSFER_REQ_VALUES, [{<<"Event-Category">>, <<"call">>}
+                              ,{<<"Event-Name">>, <<"command">>}
+                              ,{<<"Application-Name">>, <<"transfer">>}
+                              ,?INSERT_AT_TUPLE
+                             ]).
+-define(TRANSFER_REQ_TYPES, []).
+
 -define(DIAL_METHOD_SINGLE, <<"single">>).
 -define(DIAL_METHOD_SIMUL, <<"simultaneous">>).
 

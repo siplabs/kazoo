@@ -54,6 +54,7 @@
          ,receive_fax/4
          ,b_receive_fax/1
         ]).
+-export([transfer/2, transfer/3]).
 -export([bridge/2, bridge/3, bridge/4, bridge/5, bridge/6, bridge/7
          ,b_bridge/2, b_bridge/3, b_bridge/4, b_bridge/5, b_bridge/6, b_bridge/7, b_bridge/8
          ,unbridge/1, unbridge/2, unbridge/3
@@ -956,6 +957,27 @@ b_page(Endpoints, Timeout, CIDName, CIDNumber, Call) ->
 b_page(Endpoints, Timeout, CIDName, CIDNumber, SIPHeaders, Call) ->
     page(Endpoints, Timeout, CIDName, CIDNumber, SIPHeaders, Call),
     wait_for_application(Call, <<"page">>).
+
+%%--------------------------------------------------------------------
+%% @public
+%% @doc
+%% Produces the low level wh_api request to bridge the call
+%% @end
+%%--------------------------------------------------------------------
+-spec transfer(ne_binary(), whapps_call:call()) -> 'ok'.
+-spec transfer(ne_binary(), ne_binary(), whapps_call:call()) -> 'ok'.
+-spec transfer(ne_binary(), ne_binary(), ne_binary(), whapps_call:call()) -> 'ok'.
+transfer(Exten, Call) ->
+    transfer(Exten, whapps_call:call_id(Call), Call).
+transfer(Exten, Leg, Call) ->
+    transfer(Exten, Leg, <<"now">>, Call).
+transfer(Exten, Leg, InsertAt, Call) ->
+    Command = [{<<"Extension">>, Exten}
+               ,{<<"Insert-At">>, InsertAt}
+               ,{<<"Leg">>, Leg}
+               ,{<<"Application-Name">>, <<"transfer">>}
+              ],
+    whapps_call_command:send_command(Command, Call).
 
 %%--------------------------------------------------------------------
 %% @public
