@@ -184,7 +184,7 @@ unbridge_v(JObj) ->
 transfer(Prop) when is_list(Prop) ->
     case transfer_v(Prop) of
         'true' -> wh_api:build_message(Prop, ?TRANSFER_REQ_HEADERS, ?OPTIONAL_TRANSFER_REQ_HEADERS);
-        'false' -> {'error', "Proplist failed validation for unbridge_req"}
+        'false' -> {'error', "Proplist failed validation for transfer"}
     end;
 transfer(JObj) ->
     transfer(wh_json:to_proplist(JObj)).

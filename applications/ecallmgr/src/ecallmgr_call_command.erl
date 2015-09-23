@@ -553,9 +553,11 @@ get_fs_app(_Node, UUID, JObj, <<"flush_media_cache">>) ->
     lager:info("flush cache on all nodes for ~s", [CachedUrl]),
     {<<"http_cache_remove">>, CachedUrl};
 
-get_fs_app(_Node, _UUID, JObj, <<"transfer">>) ->
+get_fs_app(Node, _UUID, JObj, <<"transfer">>) ->
     Extension = wh_json:get_binary_value(<<"Extension">>, JObj),
     TransferLeg = wh_json:get_binary_value(<<"Leg">>, JObj),
+    CCVs = wh_json:get_value(<<"Custom-Channel-Vars">>, JObj, wh_json:new()),
+    ecallmgr_util:set(Node, TransferLeg, wh_json:to_proplist(CCVs)),
     lager:info("Transfering ~s to ~s", [TransferLeg, Extension]),
     {<<"transfer">>, iolist_to_binary([TransferLeg, " ", Extension])};
 

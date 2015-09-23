@@ -22,6 +22,12 @@ handle(Data, Call) ->
             Transferor -> whapps_call:other_leg_call_id(Call);
             CallId -> CallId
         end,
-    Extension = wh_json:get_first_defined([<<"captures">>, <<"target">>], Data),
-    whapps_call_command:transfer(Extension, Transferee, Call),
+    Extension = case wh_json:get_first_defined([<<"captures">>, <<"target">>], Data) of
+                    [Ext | _] -> Ext;
+                    Else -> Else
+                end,
+    CCVs = wh_json:from_list([{<<"Authorizing-Type">>, <<"callforward">>}
+                              ,{<<"Channel-Authorized">>, <<"true">>}
+                             ]),
+    whapps_call_command:transfer(Extension, Transferee, CCVs, Call),
     {'continue', Call}.

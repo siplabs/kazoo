@@ -37,13 +37,13 @@
 -define(UNBRIDGE_REQ_TYPES, []).
 
 -define(TRANSFER_REQ_HEADERS, [<<"Call-ID">>, <<"Application-Name">>, <<"Extension">>, <<"Leg">>]).
--define(OPTIONAL_TRANSFER_REQ_HEADERS, [<<"Insert-At">>]).
+-define(OPTIONAL_TRANSFER_REQ_HEADERS, [<<"Insert-At">>, <<"Custom-Channel-Vars">>]).
 -define(TRANSFER_REQ_VALUES, [{<<"Event-Category">>, <<"call">>}
                               ,{<<"Event-Name">>, <<"command">>}
                               ,{<<"Application-Name">>, <<"transfer">>}
                               ,?INSERT_AT_TUPLE
                              ]).
--define(TRANSFER_REQ_TYPES, []).
+-define(TRANSFER_REQ_TYPES, [{<<"Custom-Channel-Vars">>, fun wh_json:is_json_object/1}]).
 
 -define(DIAL_METHOD_SINGLE, <<"single">>).
 -define(DIAL_METHOD_SIMUL, <<"simultaneous">>).

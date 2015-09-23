@@ -54,7 +54,7 @@
          ,receive_fax/4
          ,b_receive_fax/1
         ]).
--export([transfer/2, transfer/3]).
+-export([transfer/2, transfer/3, transfer/4, transfer/5]).
 -export([bridge/2, bridge/3, bridge/4, bridge/5, bridge/6, bridge/7
          ,b_bridge/2, b_bridge/3, b_bridge/4, b_bridge/5, b_bridge/6, b_bridge/7, b_bridge/8
          ,unbridge/1, unbridge/2, unbridge/3
@@ -966,15 +966,19 @@ b_page(Endpoints, Timeout, CIDName, CIDNumber, SIPHeaders, Call) ->
 %%--------------------------------------------------------------------
 -spec transfer(ne_binary(), whapps_call:call()) -> 'ok'.
 -spec transfer(ne_binary(), ne_binary(), whapps_call:call()) -> 'ok'.
--spec transfer(ne_binary(), ne_binary(), ne_binary(), whapps_call:call()) -> 'ok'.
+-spec transfer(ne_binary(), ne_binary(), wh_json:object(), whapps_call:call()) -> 'ok'.
+-spec transfer(ne_binary(), ne_binary(), wh_json:object(), ne_binary(), whapps_call:call()) -> 'ok'.
 transfer(Exten, Call) ->
     transfer(Exten, whapps_call:call_id(Call), Call).
 transfer(Exten, Leg, Call) ->
-    transfer(Exten, Leg, <<"now">>, Call).
-transfer(Exten, Leg, InsertAt, Call) ->
+    transfer(Exten, Leg, wh_json:new(), Call).
+transfer(Exten, Leg, CCVs, Call) ->
+    transfer(Exten, Leg, CCVs, <<"now">>, Call).
+transfer(Exten, Leg, CCVs, InsertAt, Call) ->
     Command = [{<<"Extension">>, Exten}
                ,{<<"Insert-At">>, InsertAt}
                ,{<<"Leg">>, Leg}
+               ,{<<"Custom-Channel-Vars">>, CCVs}
                ,{<<"Application-Name">>, <<"transfer">>}
               ],
     whapps_call_command:send_command(Command, Call).
