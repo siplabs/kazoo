@@ -28,7 +28,7 @@ handle(Data, Call) ->
     lager:info("starting DISA handler"),
     whapps_call_command:answer(Call),
 
-    Pin = wh_json:get_value(<<"pin">>, Data),
+    Pin = wh_json:get_value(<<"pin">>, Data, <<>>),
     Retries = wh_json:get_integer_value(<<"retries">>, Data, 3),
     Interdigit = wh_json:get_integer_value(<<"interdigit">>, Data, whapps_call_command:default_interdigit_timeout()),
 
