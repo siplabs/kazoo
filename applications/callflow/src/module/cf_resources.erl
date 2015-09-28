@@ -45,7 +45,7 @@ handle(Data, Call) ->
     case wait_for_stepswitch(Call) of
         {<<"SUCCESS">>, _} ->
             lager:info("completed successful offnet request"),
-            cf_exe:stop(Call);
+            cf_exe:continue(Call);
         {Cause, Code} -> handle_bridge_failure(Cause, Code, Call)
     end.
 
