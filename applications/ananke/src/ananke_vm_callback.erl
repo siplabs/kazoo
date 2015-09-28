@@ -25,6 +25,7 @@
                ,call_timeout
                ,originator_type
                ,realm
+               ,caller_id
               }).
 
 -spec init() -> 'ok'.
@@ -64,6 +65,8 @@ handle_req(JObj, _Props) ->
             Attempts = get_attempts(VMBoxJObj, UserJObj, AccountJObj),
             CallTimeout = get_callback_timeout(VMBoxJObj, UserJObj, AccountJObj),
             OrigType = get_originator_type(),
+            CallerId = get_first_defined([{[<<"caller_id">>, <<"external">>], UserJObj}
+                                        ,{[<<"caller_id">>, <<"external">>], AccountJObj}]),
 
             StartArgs = #args{account_id = AccountId
                               ,user_id = UserId
@@ -76,6 +79,7 @@ handle_req(JObj, _Props) ->
                               ,call_timeout = CallTimeout
                               ,originator_type = OrigType
                               ,realm = Realm
+                              ,caller_id = CallerId
                              },
             maybe_start_caller(StartArgs)
     end.
@@ -158,6 +162,7 @@ build_originate_req(#args{callback_number = CallbackNumber
                           ,call_timeout = Timeout
                           ,originator_type = OrigType
                           ,realm = Realm
+                          ,caller_id = CallerId
                          }) ->
 
     CustomChannelVars = wh_json:from_list([{<<"Account-ID">>, AccountId}
@@ -193,6 +198,8 @@ build_originate_req(#args{callback_number = CallbackNumber
        ,{<<"Dial-Endpoint-Method">>, <<"single">>}
        ,{<<"Continue-On-Fail">>, 'false'}
        ,{<<"Simplify-Loopback">>, 'true'}
+       ,{<<"Outbound-Caller-ID-Name">>, wh_json:get_value(<<"name">>, CallerId)}
+       ,{<<"Outbound-Caller-ID-Number">>, wh_json:get_value(<<"number">>, CallerId)}
        ,{<<"Custom-Channel-Vars">>, CustomChannelVars}
        ,{<<"Export-Custom-Channel-Vars">>, [<<"Account-ID">>, <<"Account-Realm">>
                                            ,<<"Authorizing-ID">>, <<"Authorizing-Type">>
