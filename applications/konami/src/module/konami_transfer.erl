@@ -1024,13 +1024,14 @@ originate_to_extension(Extension, TransferorLeg, Call) ->
     MsgId = wh_util:rand_hex_binary(4),
 
     CallerIdNumber = caller_id_number(Call, TransferorLeg),
+    IgnoreEarlyMedia = 'false',
 
     CCVs = props:filter_undefined(
              [{<<"Account-ID">>, whapps_call:account_id(Call)}
               ,{<<"Authorizing-ID">>, whapps_call:account_id(Call)}
               ,{<<"Channel-Authorized">>, 'true'}
               ,{<<"From-URI">>, <<CallerIdNumber/binary, "@", (whapps_call:account_realm(Call))/binary>>}
-              ,{<<"Ignore-Early-Media">>, 'true'}
+              ,{<<"Ignore-Early-Media">>, IgnoreEarlyMedia}
              ]),
 
     TargetCallId = create_call_id(),
@@ -1047,7 +1048,7 @@ originate_to_extension(Extension, TransferorLeg, Call) ->
                     ,{<<"Outbound-Caller-ID-Number">>, caller_id_number(Call, TransferorLeg)}
                     ,{<<"Caller-ID-Name">>, caller_id_name(Call, TransferorLeg)}
                     ,{<<"Caller-ID-Number">>, CallerIdNumber}
-                    ,{<<"Ignore-Early-Media">>, 'true'}
+                    ,{<<"Ignore-Early-Media">>, IgnoreEarlyMedia}
                    ])),
 
     Request = props:filter_undefined(
