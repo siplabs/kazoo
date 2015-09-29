@@ -29,12 +29,14 @@
                                      ,<<"Request-Format">>
                                      ,<<"HTTP-Method">>
                                      ,<<"Debug">>
+                                     ,<<"Send-CCVs">>
                                     ]).
 -define(PIVOT_REQ_VALUES, [{<<"Event-Category">>,<<"dialplan">>}
                            ,{<<"Event-Name">>, <<"pivot_req">>}
                           ]).
 -define(PIVOT_REQ_TYPES, [{<<"Call">>, fun wh_json:is_json_object/1}
                           ,{<<"Debug">>, fun wh_util:is_boolean/1}
+                          ,{<<"Send-CCVs">>, fun wh_util:is_boolean/1}
                          ]).
 
 -define(PIVOT_FAILED_HEADERS, [<<"Call-ID">>]).

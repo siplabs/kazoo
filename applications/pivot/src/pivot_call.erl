@@ -51,6 +51,7 @@
                 ,response_event_handlers = [] :: pids()
                 ,response_ref :: reference() %% monitor ref for the pid
                 ,debug = 'false' :: boolean()
+                ,send_ccvs = 'false' :: boolean()
                 ,requester_queue :: api_binary()
                }).
 -type state() :: #state{}.
@@ -144,7 +145,8 @@ init([Call, JObj]) ->
     VoiceUri = wh_json:get_value(<<"Voice-URI">>, JObj),
 
     ReqFormat = wh_json:get_value(<<"Request-Format">>, JObj, <<"twiml">>),
-    BaseParams = wh_json:from_list(req_params(ReqFormat, Call)),
+    SendCCVs = wh_json:is_true(<<"Send-CCVs">>, JObj, 'false'),
+    BaseParams = wh_json:from_list(req_params(ReqFormat, Call, SendCCVs)),
 
     lager:debug("starting pivot req to ~s to ~s", [Method, VoiceUri]),
 
@@ -155,6 +157,7 @@ init([Call, JObj]) ->
              ,call=whapps_call:kvs_update_counter('pivot_counter', 1, Call)
              ,request_format=ReqFormat
              ,debug=wh_json:is_true(<<"Debug">>, JObj, 'false')
+             ,send_ccvs=SendCCVs
              ,requester_queue = whapps_call:controller_queue(Call)
             }
      ,'hibernate'
@@ -195,8 +198,9 @@ handle_cast('usurp', State) ->
     {'stop', 'normal', State#state{call='undefined'}};
 handle_cast({'request', Uri, Method}, #state{call=Call
                                              ,request_format=ReqFormat
+                                             ,send_ccvs=SendCCVs
                                             }=State) ->
-    handle_cast({'request', Uri, Method, req_params(ReqFormat, Call)}, State);
+    handle_cast({'request', Uri, Method, req_params(ReqFormat, Call, SendCCVs)}, State);
 handle_cast({'request', Uri, Method, Params}, #state{call=Call
                                                      ,debug=Debug
                                                      ,requester_queue=Q
@@ -545,10 +549,11 @@ uri(URI, QueryString) ->
             mochiweb_util:urlunsplit({Scheme, Host, Path, [QS, "&", QueryString], Fragment})
     end.
 
--spec req_params(ne_binary(), whapps_call:call()) -> wh_proplist().
-req_params(Format, Call) ->
+-spec req_params(ne_binary(), whapps_call:call(), boolean()) -> wh_proplist().
+req_params(Format, Call, SendCCVs) ->
     FmtAtom = wh_util:to_atom(<<"kzt_", Format/binary>>, 'true'),
-    try FmtAtom:req_params(Call) of
+    Options = [{'send_ccvs', SendCCVs}],
+    try FmtAtom:req_params(Call, Options) of
         Result ->
             lager:debug("get req params from ~s", [FmtAtom]),
             Result

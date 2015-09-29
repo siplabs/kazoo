@@ -12,7 +12,7 @@
 
 -export([exec/2
          ,parse_cmds/1
-         ,req_params/1
+         ,req_params/2
          ,exec_gather_els/3
         ]).
 
@@ -141,8 +141,8 @@ exec_element(Call, _Xml) ->
     lager:debug("unhandled XML object: ~p", [_Xml]),
     {'ok', Call}.
 
--spec req_params(whapps_call:call()) -> wh_proplist().
-req_params(Call) ->
+-spec req_params(whapps_call:call(), wh_proplist()) -> wh_proplist().
+req_params(Call, Options) ->
     props:filter_undefined(
       [{<<"CallSid">>, whapps_call:call_id(Call)}
        ,{<<"AccountSid">>, whapps_call:account_id(Call)}
@@ -163,6 +163,7 @@ req_params(Call) ->
        ,{<<"TranscriptionText">>, kzt_util:get_transcription_text(Call)}
        ,{<<"TranscriptionStatus">>, kzt_util:get_transcription_status(Call)}
        ,{<<"TranscriptionUrl">>, kzt_util:get_transcription_url(Call)}
+       ,{<<"Custom-Channel-Vars">>, kzt_util:get_ccvs(Call, Options)}
       ]).
 
 %%------------------------------------------------------------------------------

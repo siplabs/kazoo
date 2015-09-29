@@ -10,7 +10,7 @@
 
 -export([exec/2
          ,parse_cmds/1
-         ,req_params/1
+         ,req_params/2
         ]).
 
 -include("../kzt.hrl").
@@ -36,8 +36,8 @@ parse_cmds(JSON) ->
             {'error', 'not_parsed'}
     end.
 
--spec req_params(whapps_call:call()) -> wh_proplist().
-req_params(Call) ->
+-spec req_params(whapps_call:call(), wh_proplist()) -> wh_proplist().
+req_params(Call, Options) ->
     Owners = case cf_attributes:owner_ids(whapps_call:authorizing_id(Call), Call) of
                  [] -> 'undefined';
                  [OwnerId] -> OwnerId;
@@ -65,4 +65,5 @@ req_params(Call) ->
        ,{<<"Transcription-Text">>, kzt_util:get_transcription_text(Call)}
        ,{<<"Transcription-Status">>, kzt_util:get_transcription_status(Call)}
        ,{<<"Transcription-Url">>, kzt_util:get_transcription_url(Call)}
+       ,{<<"Custom-Channel-Vars">>, kzt_util:get_ccvs(Call, Options)}
       ]).
