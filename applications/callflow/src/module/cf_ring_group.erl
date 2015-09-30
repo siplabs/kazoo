@@ -64,11 +64,12 @@ attempt_endpoints(Endpoints, Data, Call) ->
     Strategy = freeswitch_strategy(Data),
     Ringback = wh_json:get_value(<<"ringback">>, Data),
     IgnoreForward = wh_json:get_binary_boolean(<<"ignore_forward">>, Data, <<"true">>),
+    IgnoreEarlyMedia = wh_json:get_binary_boolean(<<"ignore_early_media">>, Data, <<"true">>),
     lager:info("attempting ring group of ~b members with strategy ~s", [length(Endpoints), Strategy]),
     case whapps_call_command:b_bridge(Endpoints
                                       ,Timeout
                                       ,Strategy
-                                      ,<<"true">>
+                                      ,IgnoreEarlyMedia
                                       ,Ringback
                                       ,'undefined'
                                       ,IgnoreForward
