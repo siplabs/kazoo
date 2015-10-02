@@ -113,7 +113,7 @@
                        ,[{<<"call_event">>, <<"*">>}]
                       }
                     ]).
--define(QUEUE_NAME, <<>>).
+-define(QUEUE_NAME(CallId), <<"call_ctl_", CallId/binary>>).
 -define(QUEUE_OPTIONS, []).
 -define(CONSUME_OPTIONS, []).
 
@@ -144,7 +144,7 @@ start_link(Node, CallId, FetchId, ControllerQ, CCVs) ->
                ],
     gen_listener:start_link(?MODULE, [{'responders', ?RESPONDERS}
                                       ,{'bindings', Bindings}
-                                      ,{'queue_name', ?QUEUE_NAME}
+                                      ,{'queue_name', ?QUEUE_NAME(CallId)}
                                       ,{'queue_options', ?QUEUE_OPTIONS}
                                       ,{'consume_options', ?CONSUME_OPTIONS}
                                      ]
@@ -246,6 +246,7 @@ init([Node, CallId, FetchId, ControllerQ, CCVs]) ->
     put('callid', CallId),
     lager:debug("starting call control listener"),
     gen_listener:cast(self(), 'init'),
+    ecallmgr_fs_channels:update(CallId, #channel.control_q, ?QUEUE_NAME(CallId)),
     {'ok', #state{node=Node
                   ,call_id=CallId
                   ,command_q=queue:new()
@@ -761,7 +762,8 @@ add_leg(Props, LegId, #state{other_legs=Legs
             _ = spawn(fun() ->
                               _ = put('callid', CallId),
                               wh_amqp_channel:consumer_pid(ConsumerPid),
-                              publish_leg_addition(props:set_value(<<"Other-Leg-Unique-ID">>, CallId, Props))
+                              publish_leg_addition(props:set_value(<<"Other-Leg-Unique-ID">>, CallId, Props)),
+                              ecallmgr_fs_channels:update(LegId, #channel.control_q, ?QUEUE_NAME(CallId))
                       end),
             State#state{other_legs=[LegId|Legs]}
     end.
