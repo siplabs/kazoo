@@ -261,4 +261,4 @@ get_callback_timeout(VMBoxJObj, UserJObj, AccountJObj) ->
 
 -spec get_originator_type() -> ne_binary().
 get_originator_type() ->
-    whapps_config:get_binary(?CONFIG_CAT, <<"originator_type">>, <<"Voicemail">>).
+    whapps_config:get_binary(?CONFIG_CAT, <<"originator_type">>, <<"VM">>).
