@@ -221,12 +221,14 @@ handle_event(?EVENT(CallId, <<"CHANNEL_BRIDGE">>, Evt)
              ,StateName
              ,#state{call_id=CallId}=State
             ) ->
-    {'next_state', StateName, handle_channel_bridge(State, CallId, kz_call_event:other_leg_call_id(Evt))};
+    ControlQ = wh_json:get_value(<<"Control-Queue">>, Evt),
+    {'next_state', StateName, handle_channel_bridge(State, CallId, kz_call_event:other_leg_call_id(Evt), ControlQ)};
 handle_event(?EVENT(OtherLeg, <<"CHANNEL_BRIDGE">>, Evt)
              ,StateName
              ,#state{other_leg=OtherLeg}=State
             ) ->
-    {'next_state', StateName, handle_channel_bridge(State, kz_call_event:other_leg_call_id(Evt), OtherLeg)};
+    ControlQ = wh_json:get_value(<<"Control-Queue">>, Evt),
+    {'next_state', StateName, handle_channel_bridge(State, kz_call_event:other_leg_call_id(Evt), OtherLeg, ControlQ)};
 handle_event(?EVENT(CallId, <<"CHANNEL_DESTROY">>, _Evt)
              ,StateName
              ,#state{call_id=CallId}=State
@@ -564,19 +566,24 @@ maybe_other_leg_answered(State, _CallId, _EndpointId) ->
     lager:debug("ignoring channel ~s answering for endpoint ~s", [_CallId, _EndpointId]),
     State.
 
--spec handle_channel_bridge(state(), ne_binary(), ne_binary()) -> state().
+-spec handle_channel_bridge(state(), ne_binary(), ne_binary(), ne_binary()) -> state().
 handle_channel_bridge(#state{call_id=CallId
                              ,other_leg=OtherLeg
-                            }=State, CallId, OtherLeg) ->
+                            }=State, CallId, OtherLeg, _ControlQ) ->
     lager:debug("joy, 'a' and 'b' legs bridged"),
     State;
 handle_channel_bridge(#state{call_id=CallId
                              ,listen_on='a'
                              ,call=Call
-                            }=State, CallId, OtherLeg) ->
+                            }=State, CallId, OtherLeg, ControlQ) ->
     lager:debug("joy, 'a' is bridged to ~s", [OtherLeg]),
     maybe_add_call_event_bindings(OtherLeg),
-    State#state{call=whapps_call:set_other_leg_call_id(OtherLeg, Call)
+    NewCall = whapps_call:exec([{fun whapps_call:set_other_leg_call_id/2, OtherLeg}
+                                ,{fun whapps_call:set_control_queue/2, ControlQ}
+                               ]
+                               ,Call
+                              ),
+    State#state{call=NewCall
                 ,other_leg=OtherLeg
                };
 handle_channel_bridge(#state{other_leg='undefined'
@@ -585,9 +592,15 @@ handle_channel_bridge(#state{other_leg='undefined'
                             } = State
                       ,CallId
                       ,CallId
+                      ,ControlQ
                      ) when ListenOn =:= 'a' orelse ListenOn =:= 'ab' ->
     lager:info("'a' leg has bridged to self..."),
-    State#state{call=whapps_call:set_other_leg_call_id(CallId, Call)
+    NewCall = whapps_call:exec([{fun whapps_call:set_other_leg_call_id/2, CallId}
+                                ,{fun whapps_call:set_control_queue/2, ControlQ}
+                               ]
+                               ,Call
+                              ),
+    State#state{call=NewCall
                 ,other_leg=CallId
                };
 handle_channel_bridge(#state{call_id=CallId
@@ -596,15 +609,22 @@ handle_channel_bridge(#state{call_id=CallId
                             } = State
                       ,CallId
                       ,OtherLeg
+                      ,ControlQ
                      ) ->
     lager:info("'a' leg has bridged to other leg ~s... following", [OtherLeg]),
     konami_event_listener:add_call_binding(OtherLeg),
-    State#state{call=whapps_call:set_other_leg_call_id(OtherLeg, Call)
+    NewCall = whapps_call:exec([{fun whapps_call:set_other_leg_call_id/2, OtherLeg}
+                                ,{fun whapps_call:set_control_queue/2, ControlQ}
+                               ]
+                               ,Call
+                              ),
+    State#state{call=NewCall
                 ,other_leg=OtherLeg
                };
 handle_channel_bridge(#state{other_leg='undefined'}
                       ,_CallId
                       ,_OtherLeg
+                      ,_ControlQ
                      ) ->
     lager:debug("'a' leg has bridged to other leg ~s...done here", [_OtherLeg]),
     exit('normal');
@@ -614,6 +634,7 @@ handle_channel_bridge(#state{call_id=_CallId
                             }
                       ,UUID
                       ,OtherLeg
+                      ,_ControlQ
                      ) ->
     lager:debug("our 'b' leg ~s bridged to ~s instead of ~s", [OtherLeg, UUID, _CallId]),
     exit('normal');
@@ -623,29 +644,45 @@ handle_channel_bridge(#state{call_id=_CallId
                             }=State
                       ,UUID
                       ,OtherLeg
+                      ,ControlQ
                      ) ->
     lager:debug("our 'b' leg ~s bridged to ~s instead of ~s", [OtherLeg, UUID, _CallId]),
+    NewCall = whapps_call:exec([{fun whapps_call:set_call_id/2, UUID}
+                                ,{fun whapps_call:set_control_queue/2, ControlQ}
+                               ]
+                               ,Call
+                              ),
     State#state{call_id=UUID
-                ,call=whapps_call:set_call_id(UUID, Call)
+                ,call=NewCall
                };
 handle_channel_bridge(#state{call_id=_CallId
                              ,other_leg=OtherLeg
+                             ,call=Call
                             }=State
                       ,UUID
                       ,UUID
+                      ,ControlQ
                      ) ->
     lager:info("got self-bridge to ~s while on ~s and ~s", [UUID, _CallId, OtherLeg]),
     konami_event_listener:rm_call_binding(_CallId),
     konami_event_listener:rm_call_binding(OtherLeg),
     konami_event_listener:add_call_binding(UUID),
+    NewCall = whapps_call:exec([{fun whapps_call:set_call_id/2, UUID}
+                                ,{fun whapps_call:set_other_leg_call_id/2, UUID}
+                                ,{fun whapps_call:set_control_queue/2, ControlQ}
+                               ]
+                               ,Call
+                              ),
     State#state{other_leg = UUID
                 ,call_id = UUID
+                ,call=NewCall
                };
 handle_channel_bridge(#state{call_id=_CallId
                              ,other_leg=OtherLeg
                             }=State
                       ,UUID1
                       ,UUID2
+                      ,_ControlQ
                      ) ->
     lager:info("unhandled bridge beetwen ~s and ~s while on ~s and ~s", [UUID1, UUID2, _CallId, OtherLeg]),
     State.

@@ -107,6 +107,7 @@
                                       ,<<"Intercepted-By">>
                                       ,<<"Switch-Hostname">>, <<"Switch-Nodename">>
                                       ,<<"Switch-URL">>, <<"Switch-URI">>
+                                      ,<<"Control-Queue">>
                                      ]).
 -define(CALL_EVENT_VALUES, [{<<"Event-Category">>, <<"call_event">>}]).
 -define(CALL_EVENT_TYPES, [{<<"Custom-Channel-Vars">>, fun wh_json:is_json_object/1}

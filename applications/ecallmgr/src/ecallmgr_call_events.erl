@@ -646,27 +646,53 @@ publish_event(Props) ->
     %% events queue by calling create_event then this directly.
     EventName = wh_util:to_lower_binary(props:get_value(<<"Event-Name">>, Props, <<>>)),
     ApplicationName = wh_util:to_lower_binary(props:get_value(<<"Application-Name">>, Props, <<>>)),
-    case {ApplicationName, EventName} of
-        {_, <<"dtmf">>} ->
-            lager:debug("publishing received DTMF digit ~s"
-                        ,[props:get_value(<<"DTMF-Digit">>, Props)]
-                       );
-        {<<>>, <<"channel_bridge">>} ->
-            OtherLeg = get_other_leg(Props),
-            gen_listener:cast(self(), {'other_leg', OtherLeg}),
-            lager:debug("publishing channel_bridge to other leg ~s", [OtherLeg]);
-        {<<>>, _Event} ->
-            lager:debug("publishing call event ~s", [_Event]);
-        {ApplicationName, <<"channel_execute_complete">>} ->
-            ApplicationResponse = wh_util:to_lower_binary(props:get_value(<<"Application-Response">>, Props, <<>>)),
-            ApplicationData = props:get_value(<<"Raw-Application-Data">>, Props, <<>>),
-            lager:debug("publishing call event ~s '~s(~s)' result: ~s", [EventName, ApplicationName, ApplicationData, ApplicationResponse]);
-        {ApplicationName, _} ->
-            ApplicationData = props:get_value(<<"Raw-Application-Data">>, Props, <<>>),
-            lager:debug("publishing call event ~s '~s(~s)'", [EventName, ApplicationName, ApplicationData])
-    end,
-    dump_event_info(Props),
-    wapi_call:publish_event(Props).
+    Props1 = case {ApplicationName, EventName} of
+                 {_, <<"dtmf">>} ->
+                     lager:debug("publishing received DTMF digit ~s"
+                                 ,[props:get_value(<<"DTMF-Digit">>, Props)]
+                                ),
+                     Props;
+                 {<<>>, <<"channel_bridge">>} ->
+                     OtherLeg = get_other_leg(Props),
+                     gen_listener:cast(self(), {'other_leg', OtherLeg}),
+                     lager:debug("publishing channel_bridge to other leg ~s", [OtherLeg]),
+                     Ev = case ecallmgr_fs_channel:fetch(get_call_id(Props)) of
+                              {'ok', Channel} ->
+                                  ControlQ = wh_json:get_value(<<"control_q">>, Channel),
+                                  props:insert_value(<<"Control-Queue">>, ControlQ, Props);
+                              _ -> Props
+                          end,
+                     wapi_call:publish_event(swap_legs(Ev)),
+                     Ev;
+                 {<<>>, _Event} ->
+                     lager:debug("publishing call event ~s", [_Event]),
+                     Props;
+                 {ApplicationName, <<"channel_execute_complete">>} ->
+                     ApplicationResponse = wh_util:to_lower_binary(props:get_value(<<"Application-Response">>, Props, <<>>)),
+                     ApplicationData = props:get_value(<<"Raw-Application-Data">>, Props, <<>>),
+                     lager:debug("publishing call event ~s '~s(~s)' result: ~s", [EventName, ApplicationName, ApplicationData, ApplicationResponse]),
+                     Props;
+                 {ApplicationName, _} ->
+                     ApplicationData = props:get_value(<<"Raw-Application-Data">>, Props, <<>>),
+                     lager:debug("publishing call event ~s '~s(~s)'", [EventName, ApplicationName, ApplicationData]),
+                     Props
+             end,
+    dump_event_info(Props1),
+    wapi_call:publish_event(Props1).
+
+-spec swap_legs(wh_proplist()) -> wh_proplist().
+swap_legs(Props) ->
+    CallId = props:get_first_defined([<<"Call-ID">>, <<"Unique-ID">>], Props),
+    OtherLeg = props:get_first_defined([<<"Other-Leg-Call-ID">>, <<"Other-Leg-Unique-ID">>], Props),
+    P0 = props:filter(fun is_not_call_id_field/1, Props),
+    props:insert_value(<<"Call-ID">>, OtherLeg, props:insert_value(<<"Other-Leg-Call-ID">>, CallId, P0)).
+
+-spec is_not_call_id_field(ne_binary()) -> boolean().
+is_not_call_id_field({<<"Call-ID">>, _}) -> 'false';
+is_not_call_id_field({<<"Other-Leg-Call-ID">>, _}) -> 'false';
+is_not_call_id_field({<<"Unique-ID">>, _}) -> 'false';
+is_not_call_id_field({<<"Other-Leg-Unique-ID">>, _}) -> 'false';
+is_not_call_id_field(_) -> 'true'.
 
 dump_event_info(Props) ->
     EventName = wh_util:to_lower_binary(props:get_value(<<"Event-Name">>, Props, <<>>)),
