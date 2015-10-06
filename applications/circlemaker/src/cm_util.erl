@@ -299,36 +299,34 @@ process_tokens(JObj, ItemValuePattern, CustomData, AAADoc, ItemLegType, ItemEven
             lager:debug("All tokens processed. Resulting value is ~p", [ItemValuePattern]),
             ItemValuePattern;
         {'match', Groups} ->
+            lager:debug("match: ~p", [Groups]),
             {Pos, Len} = lists:nth(2, Groups),
             Alias = lists:sublist(binary_to_list(ItemValuePattern), Pos + 1, Len),
-            lager:debug("Matched groups: ~p, and alias found: ~p", [Groups, Alias]),
+            lager:debug("Alias found: ~p", [Alias]),
             % find this item in ETS
             OtherLegCallId = wh_json:get_value(<<"Other-Leg-Call-ID">>, JObj),
-            CallId = wh_json:get_value(<<"Call-ID">>, JObj),
-            lager:debug("CallID is ~p and other leg's CallID is ~p", [CallId, OtherLegCallId]),
+            lager:debug("CallID of other leg is ~p", [OtherLegCallId]),
             % get leg type and event_type of orig leg
             RequestKV = wh_json:get_value([<<"leg_fields_transformation">>, <<"request_fields">>], AAADoc),
             [FoundItem] = [Item || Item <- RequestKV, wh_json:get_value(<<"alias">>, Item) =:= list_to_binary(Alias)],
-            lager:debug("Items was found in request fields alias: ~p", [FoundItem]),
-            {ChannelType, ChannelEvent, UsedCallId} = case wh_json:get_value(<<"source">>, FoundItem) of
+            lager:debug("qwe1: ~p", [FoundItem]),
+            {ChannelType, ChannelOrig} = case wh_json:get_value(<<"source">>, FoundItem) of
                                              <<"custom">> ->
-                                                 lager:debug("It's a custom alias ~p", [FoundItem]),
+                                                 lager:debug("It's custom alias ~p", [FoundItem]),
                                                  {'other', 'other'};
-                                             <<"orig_leg">> ->
-                                                 lager:debug("It's an orig_leg alias"),
-                                                 {list_to_atom(binary_to_list(<<"orig_leg">>)), list_to_atom(binary_to_list(wh_json:get_value(<<"event">>, FoundItem))), OtherLegCallId};
-                                             <<"dest_leg">> ->
-                                                 lager:debug("It's a dest_leg alias"),
-                                                 {list_to_atom(binary_to_list(<<"dest_leg">>)), list_to_atom(binary_to_list(wh_json:get_value(<<"event">>, FoundItem))), CallId}
+                                             Source ->
+                                                 lager:error("It's not custom alias"),
+                                                 % stay as is
+                                                 {list_to_atom(binary_to_list(Source)), list_to_atom(binary_to_list(wh_json:get_value(<<"event">>, FoundItem)))}
                                          end,
-            lager:debug("Used CallID is ~p , channel type is ~p and channel event is ~p", [{UsedCallId, ChannelType, ChannelEvent}]),
-            ResultValue = case ets:lookup(?ETS_LEGS_STATE_STORAGE, {UsedCallId, ChannelType, ChannelEvent, list_to_binary(Alias)}) of
+            lager:debug("qwe3: ~p", [{OtherLegCallId, ChannelType, ChannelOrig}]),
+            ResultValue = case ets:lookup(?ETS_LEGS_STATE_STORAGE, {OtherLegCallId, ChannelType, ChannelOrig, list_to_binary(Alias)}) of
                               [] ->
                                   lager:debug("No data in ETS for this alias. It could be a custom data."),
                                   % no data in ETS, so it could be an "custom" data source. Trying to find it
                                   RequestKV = wh_json:get_value([<<"leg_fields_transformation">>, <<"request_fields">>], AAADoc),
                                   [FoundItem] = [Item || Item <- RequestKV, wh_json:get_value(<<"alias">>, Item) =:= list_to_binary(Alias)],
-                                  lager:debug("Custom items was found in request fields alias: ~p", [FoundItem]),
+                                  lager:debug("qwe2: ~p", [FoundItem]),
                                   case wh_json:get_value(<<"source">>, FoundItem) of
                                       <<"custom">> ->
                                           lager:debug("Found custom alias ~p", [FoundItem]),
