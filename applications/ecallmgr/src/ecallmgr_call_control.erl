@@ -113,7 +113,7 @@
                        ,[{<<"call_event">>, <<"*">>}]
                       }
                     ]).
--define(QUEUE_NAME(CallId), <<"call_ctl_", CallId/binary>>).
+-define(QUEUE_NAME, <<>>).
 -define(QUEUE_OPTIONS, []).
 -define(CONSUME_OPTIONS, []).
 
@@ -144,7 +144,7 @@ start_link(Node, CallId, FetchId, ControllerQ, CCVs) ->
                ],
     gen_listener:start_link(?MODULE, [{'responders', ?RESPONDERS}
                                       ,{'bindings', Bindings}
-                                      ,{'queue_name', ?QUEUE_NAME(CallId)}
+                                      ,{'queue_name', ?QUEUE_NAME}
                                       ,{'queue_options', ?QUEUE_OPTIONS}
                                       ,{'consume_options', ?CONSUME_OPTIONS}
                                      ]
@@ -246,7 +246,6 @@ init([Node, CallId, FetchId, ControllerQ, CCVs]) ->
     put('callid', CallId),
     lager:debug("starting call control listener"),
     gen_listener:cast(self(), 'init'),
-    ecallmgr_fs_channels:update(CallId, #channel.control_q, ?QUEUE_NAME(CallId)),
     {'ok', #state{node=Node
                   ,call_id=CallId
                   ,command_q=queue:new()
@@ -319,7 +318,8 @@ handle_cast({'gen_listener', {'created_queue', _}}
            ) ->
     lager:debug("call control got created_queue but controller is undefined"),
     {'noreply', State};
-handle_cast({'gen_listener', {'created_queue', Q}}, State) ->
+handle_cast({'gen_listener', {'created_queue', Q}}, #state{call_id = CallId} = State) ->
+    ecallmgr_fs_channels:update(CallId, #channel.control_q, Q),
     {'noreply', State#state{control_q=Q}};
 handle_cast({'gen_listener', {'is_consuming', _IsConsuming}}
             ,#state{controller_q='undefined'}=State
@@ -753,6 +753,7 @@ handle_channel_create(Props, #state{call_id=CallId}=State) ->
 -spec add_leg(wh_proplist(), ne_binary(), state()) -> state().
 add_leg(Props, LegId, #state{other_legs=Legs
                              ,call_id=CallId
+                             ,control_q = ControlQ
                             }=State) ->
     case lists:member(LegId, Legs) of
         'true' -> State;
@@ -763,7 +764,7 @@ add_leg(Props, LegId, #state{other_legs=Legs
                               _ = put('callid', CallId),
                               wh_amqp_channel:consumer_pid(ConsumerPid),
                               publish_leg_addition(props:set_value(<<"Other-Leg-Unique-ID">>, CallId, Props)),
-                              ecallmgr_fs_channels:update(LegId, #channel.control_q, ?QUEUE_NAME(CallId))
+                              ecallmgr_fs_channels:update(LegId, #channel.control_q, ControlQ)
                       end),
             State#state{other_legs=[LegId|Legs]}
     end.
