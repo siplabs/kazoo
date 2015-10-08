@@ -1160,6 +1160,7 @@ connect(Flags, Call) ->
                ,props:get_value(<<"Target-Call-ID">>, Command)
                ,<<"Connect Legs">>
               ),
+    whapps_call_command:send_command(Command, Call),
     whapps_call_command:send_command(Command, Call).
 
 -type dtmf_next_state() :: 'attended_wait' | 'attended_answer' | 'takeback'.
