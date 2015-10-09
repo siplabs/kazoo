@@ -102,6 +102,7 @@ start_fsm(Call, JObj) ->
                                        whapps_call:kvs_store(?MODULE, self(), Call)
                                       )
                                ,call_id=whapps_call:call_id_direct(Call)
+                               ,other_leg=whapps_call:other_leg_call_id(Call)
 
                                ,b_endpoint_id=BEndpointId
                               }).
