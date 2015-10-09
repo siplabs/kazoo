@@ -304,7 +304,8 @@ process_tokens(JObj, ItemValuePattern, CustomData, AAADoc, ItemLegType, ItemEven
             Alias = lists:sublist(binary_to_list(ItemValuePattern), Pos + 1, Len),
             lager:debug("Matched groups: ~p, and alias found: ~p", [Groups, Alias]),
             % find this item in ETS
-            OtherLegCallId = wh_json:get_value(<<"Other-Leg-Call-ID">>, JObj),
+            OtherLegCallId1 = wh_json:get_value(<<"Other-Leg-Call-ID">>, JObj),
+            OtherLegCallId = wh_json:get_value([?CCV, <<"Bridge-ID">>], JObj, OtherLegCallId1),
             CallId = wh_json:get_value(<<"Call-ID">>, JObj),
             lager:debug("CallID is ~p and other leg's CallID is ~p", [CallId, OtherLegCallId]),
             % get leg type and event_type of orig leg
@@ -316,8 +317,14 @@ process_tokens(JObj, ItemValuePattern, CustomData, AAADoc, ItemLegType, ItemEven
                                                               lager:debug("It's a custom alias ~p", [FoundItem]),
                                                               {'other', 'other', OtherLegCallId};
                                                           <<"orig_leg">> ->
-                                                              lager:debug("It's an orig_leg alias"),
-                                                              {list_to_atom(binary_to_list(<<"orig_leg">>)), list_to_atom(binary_to_list(wh_json:get_value(<<"event">>, FoundItem))), OtherLegCallId};
+                                                              case {ItemLegType, ItemEventType} of
+                                                                  {'orig_leg', 'channel_create'} ->
+                                                                      lager:debug("It's an orig_leg alias and the leg is orig_leg on channel_create"),
+                                                                      {list_to_atom(binary_to_list(<<"orig_leg">>)), list_to_atom(binary_to_list(wh_json:get_value(<<"event">>, FoundItem))), CallId};
+                                                                  _ ->
+                                                                      lager:debug("It's an orig_leg alias"),
+                                                                      {list_to_atom(binary_to_list(<<"orig_leg">>)), list_to_atom(binary_to_list(wh_json:get_value(<<"event">>, FoundItem))), OtherLegCallId}
+                                                              end;
                                                           <<"dest_leg">> ->
                                                               lager:debug("It's a dest_leg alias"),
                                                               {list_to_atom(binary_to_list(<<"dest_leg">>)), list_to_atom(binary_to_list(wh_json:get_value(<<"event">>, FoundItem))), CallId}
