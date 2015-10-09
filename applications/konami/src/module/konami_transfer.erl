@@ -406,6 +406,7 @@ attended_wait(?EVENT(TargetB, <<"LEG_DESTROYED">>, Evt)
 attended_wait(?EVENT(TargetB, <<"CHANNEL_BRIDGE">>, Evt)
               ,#state{target_b_leg=TargetB
                       ,target=Target
+                      ,target_call=TargetCall
                      }=State
              ) ->
     case kz_call_event:other_leg_call_id(Evt) of
@@ -415,8 +416,10 @@ attended_wait(?EVENT(TargetB, <<"CHANNEL_BRIDGE">>, Evt)
             {'next_state', 'attended_wait', State};
         OtherLeg ->
             lager:debug("target 'b' ~s bridged to other leg ~s", [TargetB, OtherLeg]),
+            ControlQ = wh_json:get_value(<<"Control-Queue">>, Evt),
+            NewTargetCall = whapps_call:set_control_queue(ControlQ, TargetCall),
             ?WSD_EVT(TargetB, OtherLeg, <<"bridged to target">>),
-            {'next_state', 'attended_wait', handle_real_target(State, OtherLeg)}
+            {'next_state', 'attended_wait', handle_real_target(State#state{target_call = NewTargetCall}, OtherLeg)}
     end;
 attended_wait(?EVENT(_CallId, <<"LEG_CREATED">>, _Evt), State) ->
     lager:debug("ignoring leg_created for ~s and ~s"
