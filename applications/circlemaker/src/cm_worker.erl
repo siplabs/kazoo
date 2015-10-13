@@ -357,7 +357,12 @@ maybe_channel_blocked(AllServers, Address, JObj, AaaProps, AccountId, ParentAcco
                 'ok' ->
                     maybe_eradius_request(AllServers, Address, JObj, AaaProps, AccountId, ParentAccountId);
                 'blocked' ->
-                    lager:debug("Accounting for this type of channel is blocked. Request bypassed.")
+                    lager:debug("Accounting for this type of channel is blocked. Request bypassed."),
+                    (wh_json:get_value(<<"Acct-Status-Type">>, JObj) =:= <<"Stop">>) andalso
+                    begin
+                        CallId = wh_json:get_value(<<"Call-ID">>, JObj),
+                        cm_util:delete_device_info(CallId)
+                    end
             end
     end.
 
@@ -406,14 +411,12 @@ maybe_eradius_request([Server | Servers], Address, JObj, AaaProps, AccountId, Pa
                       lager:debug("Operation is accounting"),
                       JObj1 = cm_util:append_resource_name_to_request(JObj),
                       % delete device from ETS if It's accounting Stop
-                      case wh_json:get_value(<<"Acct-Status-Type">>, JObj1) of
-                          <<"Stop">> ->
+                      % TODO: the same code in maybe_channel_blocked/6 should be refactored
+                      (wh_json:get_value(<<"Acct-Status-Type">>, JObj1) =:= <<"Stop">>) andalso
+                          begin
                               CallId = wh_json:get_value(<<"Call-ID">>, JObj1),
-                              lager:debug("Delete SIP Device Info from ETS for CallId ~p", [CallId]),
-                              ets:delete(?ETS_DEVICE_INFO, CallId);
-                          _ ->
-                              'ok'
-                      end,
+                              cm_util:delete_device_info(CallId)
+                          end,
                       % TODO: next line should be moved to the cm_util
                       OrigAccountId = wh_json:get_value([?CCV, <<"Account-ID">>], JObj1),
                       {'ok', OrigAccount} = couch_mgr:open_cache_doc(?WH_ACCOUNTS_DB, OrigAccountId),

@@ -166,8 +166,7 @@ handle_accounting_req(JObj, _Props) ->
         'undefined' when IsInboundOrigLegOnChannelDestroy ->
             % this situation can be if outer inbound leg wasn't authorized so ETS doesn't any account
             % as result we shouldn't do 'stop' accounting operation
-            lager:debug("Delete SIP Device Info from ETS for CallId ~p", [CallId]),
-            ets:delete(?ETS_DEVICE_INFO, CallId),
+            cm_util:delete_device_info(CallId),
             OtherLegCallId = wh_json:get_value(<<"Other-Leg-Call-ID">>, JObj),
             cm_util:ets_cleanup_other_and_orig_legs(OtherLegCallId, CallId),
             case ets:lookup(?ETS_DELAY_ACCOUNTING, CallId) of
@@ -254,9 +253,8 @@ handle_accounting_req(JObj, _Props) ->
                             % outbound channel wasn't created, so there is no channel creation was for CallId
                             % so we should bypass this accounting "stop" request
                             ets:delete(?ETS_DELAY_ACCOUNTING, CallId),
-                            ets:delete(?ETS_DEVICE_INFO, CallId),
-                            lager:debug("Cleanup of the delayed operation for outer inbound leg: ~p", [LostJObj]),
-                            lager:debug("Delete SIP Device Info from ETS for CallId ~p", [CallId])
+                            cm_util:delete_device_info(CallId),
+                            lager:debug("Cleanup of the delayed operation for outer inbound leg: ~p", [LostJObj])
                     end;
                 {<<"call_event">>, <<"channel_fs_status_resp">>} ->
                     % Interim-Update

@@ -27,6 +27,7 @@
          ,get_resource_name/2
          ,append_resource_name_to_request/1
          ,insert_device_info_if_needed/2
+         ,delete_device_info/1
          ,mark_channel_as_loopback/1
          ,unmark_channel_as_loopback/1
          ,is_channel_loopback/1
@@ -365,10 +366,9 @@ cleanup_leg_kvs(CallId) ->
     case ets:match_object(?ETS_LEGS_STATE_STORAGE, {{CallId,'$1','$2', '$3'}, '_'}) of
         [] ->
             lager:info("No objects in legs state storage to cleanup for the leg ~p", [CallId]);
-        _ItemsList ->
-            lager:info("Cleanup cached record in legs state storage for the leg ~p", [CallId])
-%%             ,
-%%             [ets:delete(?ETS_LEGS_STATE_STORAGE, {CallId1, ItemLegType, ItemEventType, Alias}) || {{CallId1, ItemLegType, ItemEventType, Alias}, _} <- ItemsList]
+        ItemsList ->
+            lager:info("Cleanup cached record in legs state storage for the leg ~p", [CallId]),
+            [ets:delete(?ETS_LEGS_STATE_STORAGE, {CallId1, ItemLegType, ItemEventType, Alias}) || {{CallId1, ItemLegType, ItemEventType, Alias}, _} <- ItemsList]
     end.
 
 -spec determine_aaa_request_type(wh_json:object()) -> 'authn' | 'authz' | 'accounting' | 'custom'.
@@ -682,6 +682,10 @@ insert_device_info_if_needed(JObj, _Type) ->
 %%             JObj
 %%     end.
 
+delete_device_info(CallId) ->
+    lager:debug("Delete SIP Device Info from ETS for CallId ~p", [CallId]),
+    ets:delete(?ETS_DEVICE_INFO, CallId).
+
 mark_channel_as_loopback(CallId) ->
     lager:debug("Channel ~p marked as loopback", [CallId]),
     ets:insert(?ETS_LOOPBACK_CHANNELS, {CallId, 'loopback'}).
@@ -783,6 +787,7 @@ ets_cleanup_other_and_orig_legs(OrigLegCallId, OtherLegCallId) ->
         [{Key = {OrigLegCallId, OtherLegCallId}, _, 'other'}] ->
             lager:debug("Cleanup other leg ~p of inbound originate leg ~p", [OtherLegCallId, OrigLegCallId]),
             ets:delete(?ETS_ORIG_INBOUND_LEG, Key),
+            cm_util:cleanup_leg_kvs(OtherLegCallId),
             ets:update_counter(?ETS_ORIG_INBOUND_LEG, {OrigLegCallId}, {2, -1}),
             case (Counter = ets:lookup_element(?ETS_ORIG_INBOUND_LEG, {OrigLegCallId}, 2)) > 0 of
                 'true' ->
@@ -791,7 +796,8 @@ ets_cleanup_other_and_orig_legs(OrigLegCallId, OtherLegCallId) ->
                 'false' ->
                     lager:debug("Cleanup inbound originate leg ~p", [OrigLegCallId]),
                     ets:delete(?ETS_ORIG_INBOUND_LEG, {OrigLegCallId}),
-                    cm_util:cleanup_channel_fs_status(OrigLegCallId)
+                    cm_util:cleanup_channel_fs_status(OrigLegCallId),
+                    cm_util:cleanup_leg_kvs(OrigLegCallId)
             end
     end.
 
