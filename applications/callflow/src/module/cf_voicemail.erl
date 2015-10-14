@@ -230,6 +230,9 @@ check_mailbox(#mailbox{require_pin='false'}=Box, 'true', Call, _) ->
     %% right to the main menu
     lager:info("caller is the owner of this mailbox, and requires no pin"),
     main_menu(Box, Call);
+check_mailbox(#mailbox{require_pin='false', check_if_owner = 'false'}=Box, _, Call, _) ->
+    lager:info("mailbox configured to do not check owner, and requires no pin"),
+    main_menu(Box, Call);
 check_mailbox(#mailbox{pin = <<>>}=Box, 'true', Call, _) ->
     %% If this is the owner of the mailbox calling in and it doesn't require a pin then jump
     %% right to the main menu
