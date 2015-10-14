@@ -520,17 +520,33 @@ build_originate_args(Action, State, JObj, FetchId) ->
             build_originate_args_from_endpoints(Action, UpdatedEndpoints, JObj, FetchId)
     end.
 
+-spec is_loopback(wh_json:object()) -> boolean().
+is_loopback(JObj) ->
+    wh_json:get_value(<<"Invite-Format">>, JObj) =:= <<"loopback">>.
+
+-spec normalized_endpoints_acc(wh_json:object(), wh_json:objects()) -> wh_json:objects().
+normalized_endpoints_acc(Endpoint, Acc) ->
+    {ok, CtrlPid} = ecallmgr_loopback_control:start_link(Endpoint),
+    {ok, ParsedEndpoints} = ecallmgr_loopback_control:get_endpoints(CtrlPid),
+    Acc ++ ParsedEndpoints.
+
 -spec build_originate_args_from_endpoints(ne_binary(), wh_json:objects(), wh_json:object(), ne_binary()) ->
                                                  ne_binary().
 build_originate_args_from_endpoints(Action, Endpoints, JObj, FetchId) ->
     lager:debug("building originate command arguments"),
     DialSeparator = ecallmgr_util:get_dial_separator(JObj, Endpoints),
-
-    DialStrings = ecallmgr_util:build_bridge_string(Endpoints, DialSeparator),
+    lager:debug([{trace, true}], "Endpoints ~p", [Endpoints]),
+    lager:debug([{trace, true}], "jsobj ~p", [JObj]),
+    {LoopbackEndpoints, NormalEndpoints} = lists:splitwith(fun is_loopback/1, Endpoints),
+    NormalizedEndpoints = lists:foldl(fun normalized_endpoints_acc/2, NormalEndpoints, LoopbackEndpoints),
+    lager:debug("normalized endpoints ~p", [NormalizedEndpoints]),
+    DialStrings = ecallmgr_util:build_bridge_string(NormalizedEndpoints, DialSeparator),
+    lager:debug([{trace, true}], "dial string end: ~p", [DialStrings]),
 
     ChannelVars = get_channel_vars(JObj, FetchId),
 
     list_to_binary([ChannelVars, DialStrings, " ", Action]).
+
 
 -spec get_channel_vars(wh_json:object(), ne_binary()) -> iolist().
 get_channel_vars(JObj, FetchId) ->
