@@ -42,9 +42,7 @@
 %%--------------------------------------------------------------------
 start_link(Endpoint) ->
     CallId = <<<<"loopback-">>/binary, (couch_mgr:get_uuid())/binary>>,
-    Bindings = [{'call', [{'callid', CallId}
-                          ,{'restrict_to', [<<"usurp_control">>, <<"hangup_call">>]}
-                         ]}
+    Bindings = [{'call', [{'callid', CallId}]}
                 ,{'dialplan', []}
                 ,{'self', []}
                ],
@@ -207,6 +205,7 @@ handle_command(<<"bridge">>, Data, State) ->
     maybe_reply(NewState);
 handle_command(_Application, _Data, State) ->
     lager:debug([{trace, true}], "unknown application ~p", [_Application]),
+    lager:debug([{trace, true}], "data ~p", [_Data]),
     {noreply, State}.
 
 maybe_reply(#state{reply_to = undefined} = State) ->
