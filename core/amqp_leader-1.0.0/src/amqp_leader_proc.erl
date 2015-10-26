@@ -319,7 +319,7 @@ worker_announce(Name, Pid) ->
 %% @end
 -spec call(server_ref(), term()) -> term().
 call(Name, Request) ->
-    case catch gen:call(Name, '$gen_call', Request) of
+    case catch gen_call(Name, '$gen_call', Request) of
         {ok,Res} ->
             Res;
         {'EXIT',Reason} ->
@@ -333,7 +333,7 @@ call(Name, Request) ->
 %% @end
 -spec call(server_ref(), term(), integer()) -> term().
 call(Name, Request, Timeout) ->
-    case catch gen:call(Name, '$gen_call', Request, Timeout) of
+    case catch gen_call(Name, '$gen_call', Request, Timeout) of
         {ok,Res} ->
             Res;
         {'EXIT',Reason} ->
@@ -350,7 +350,7 @@ call(Name, Request, Timeout) ->
 %%
 -spec leader_call(Name::server_ref(), Request::term()) -> term().
 leader_call(Name, Request) ->
-    case catch gen:call(Name, '$leader_call', Request) of
+    case catch gen_call(Name, '$leader_call', Request) of
         {ok,{leader,reply,Res}} ->
             Res;
         {ok,{error, leader_died}} ->
@@ -368,7 +368,7 @@ leader_call(Name, Request) ->
 -spec leader_call(Name::server_ref(), Request::term(),
                   Timeout::integer()) -> term().
 leader_call(Name, Request, Timeout) ->
-    case catch gen:call(Name, '$leader_call', Request, Timeout) of
+    case catch gen_call(Name, '$leader_call', Request, Timeout) of
         {ok,{leader,reply,Res}} ->
             Res;
         {'EXIT',Reason} ->
@@ -1627,3 +1627,9 @@ send_checkleads(Name, Time, GlProc, Down) ->
 
 send(_Pid, _Msg) ->
     _Pid, _Msg.
+
+gen_call(_Pid, _Tag, _Req) ->
+    gen:call(_Pid, _Tag, _Req).
+
+gen_call(_Pid, _Tag, _Req, _Timeout) ->
+    gen:call(_Pid, _Tag, _Req, _Timeout).
