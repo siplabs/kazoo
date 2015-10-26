@@ -217,6 +217,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 -spec process_call_to_platform(whapps_call:call()) -> 'ok'.
 process_call_to_platform(Call) ->
+    wh_util:put_callid(Call),
     whapps_call_command:answer(Call),
     CID = cccp_util:caller_cid(Call),
     case (not cccp_blocking:is_cid_blocked(CID)) andalso authorize(Call) of
