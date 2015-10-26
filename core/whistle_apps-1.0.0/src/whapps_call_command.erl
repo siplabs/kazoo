@@ -1640,23 +1640,27 @@ b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Call) ->
 b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Call) ->
     b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, ?DEFAULT_COLLECT_TIMEOUT, Call).
 b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, Call) ->
-    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, 'undefined', Call).
-b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InvalidPrompt, Call) ->
-    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InvalidPrompt, <<"\\d+">>, Call).
-b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InvalidPrompt, Regex, Call) ->
-    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InvalidPrompt, Regex, ?ANY_DIGIT, Call).
+    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, ?DEFAULT_INTERDIGIT_TIMEOUT, Call).
 
-b_prompt_and_collect_digits(_MinDigits, _MaxDigits, _Prompt, 0, _Timeout, 'undefined', _Regex, _Terminators, _Call) ->
+b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, Call) ->
+    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, 'undefined', Call).
+b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, InvalidPrompt, Call) ->
+    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, InvalidPrompt, <<"\\d+">>, Call).
+b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, InvalidPrompt, Regex, Call) ->
+    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, InvalidPrompt, Regex, ?ANY_DIGIT, Call).
+
+b_prompt_and_collect_digits(_MinDigits, _MaxDigits, _Prompt, 0, _Timeout, _InterdigitTimeout, 'undefined', _Regex, _Terminators, _Call) ->
     {'ok', <<>>};
-b_prompt_and_collect_digits(_MinDigits, _MaxDigits, _Prompt, 0, _Timeout, InvalidPrompt, _Regex, _Terminators, Call) ->
+b_prompt_and_collect_digits(_MinDigits, _MaxDigits, _Prompt, 0, _Timeout, _InterdigitTimeout, InvalidPrompt, _Regex, _Terminators, Call) ->
     _ = b_prompt(InvalidPrompt, Call),
     {'ok', <<>>};
-b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InvalidPrompt, Regex, Terminators, Call) ->
+b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, InvalidPrompt, Regex, Terminators, Call) ->
     b_play_and_collect_digits(MinDigits
                               ,MaxDigits
                               ,wh_media_util:get_prompt(Prompt, Call)
                               ,Tries
                               ,Timeout
+                              ,InterdigitTimeout
                               ,InvalidPrompt
                               ,Regex
                               ,Terminators
@@ -1754,20 +1758,22 @@ b_play_and_collect_digits(MinDigits, MaxDigits, Media, Call) ->
 b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Call) ->
     b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, ?DEFAULT_COLLECT_TIMEOUT, Call).
 b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, Call) ->
-    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, 'undefined', Call).
-b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, MediaInvalid, Call) ->
-    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, MediaInvalid, <<"[\\d\\*\\#]+">>, Call).
-b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, MediaInvalid, Regex, Call) ->
-    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, MediaInvalid, Regex, ?ANY_DIGIT, Call).
+    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, ?DEFAULT_INTERDIGIT_TIMEOUT, Call).
+b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, Call) ->
+    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, 'undefined', Call).
+b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, MediaInvalid, Call) ->
+    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, MediaInvalid, <<"[\\d\\*\\#]+">>, Call).
+b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, MediaInvalid, Regex, Call) ->
+    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, MediaInvalid, Regex, ?ANY_DIGIT, Call).
 
-b_play_and_collect_digits(_MinDigits, _MaxDigits, _Media, 0, _Timeout, 'undefined', _Regex, _Terminators, _Call) ->
+b_play_and_collect_digits(_MinDigits, _MaxDigits, _Media, 0, _Timeout, _InterdigitTimeout, 'undefined', _Regex, _Terminators, _Call) ->
     {'ok', <<>>};
-b_play_and_collect_digits(_MinDigits, _MaxDigits, _Media, 0, _Timeout, MediaInvalid, _Regex, _Terminators, Call) ->
+b_play_and_collect_digits(_MinDigits, _MaxDigits, _Media, 0, _Timeout, _InterdigitTimeout, MediaInvalid, _Regex, _Terminators, Call) ->
     _ = b_play(MediaInvalid, Call),
     {'ok', <<>>};
-b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, MediaInvalid, Regex, Terminators, Call) ->
+b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, MediaInvalid, Regex, Terminators, Call) ->
     NoopId = play(Media, Terminators, Call),
-    case collect_digits(MaxDigits, Timeout, ?DEFAULT_INTERDIGIT_TIMEOUT, NoopId, Call) of
+    case collect_digits(MaxDigits, Timeout, InterdigitTimeout, NoopId, Call) of
         {'ok', Digits} ->
             case re:run(Digits, Regex) of
                 {'match', _} when byte_size(Digits) >= MinDigits ->
@@ -1775,7 +1781,8 @@ b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, MediaInva
                 _ ->
                     b_play_and_collect_digits(MinDigits, MaxDigits
                                               ,Media, Tries - 1
-                                              ,Timeout, MediaInvalid
+                                              ,Timeout, InterdigitTimeout
+                                              ,MediaInvalid
                                               ,Regex, Terminators
                                               ,Call
                                              )

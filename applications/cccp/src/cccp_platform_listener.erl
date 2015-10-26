@@ -37,6 +37,7 @@
 
 -define(MAX_ATTEMPTS, whapps_config:get(?CCCP_CONFIG_CAT, <<"tries_count">>, 3)).
 -define(PLATFORM_COLLECT_TIMEOUT, whapps_config:get_integer(?CCCP_CONFIG_CAT, <<"platform_collect_timeout">>, 5000)).
+-define(PLATFORM_INTERDIGIT_TIMEOUT, whapps_config:get_integer(?CCCP_CONFIG_CAT, <<"platform_interdigit_timeout">>, 5000)).
 -define(PLATFORM_ORIGINATOR, whapps_config:get_binary(?CCCP_CONFIG_CAT, <<"platform_origiantor_type">>, <<"CCCP">>)).
 
 %% By convention, we put the options here in macros, but not required.
@@ -304,6 +305,7 @@ pin_collect(PinPrompt, Call) ->
                                                     ,PinPrompt
                                                     ,1
                                                     ,?PLATFORM_COLLECT_TIMEOUT
+                                                    ,?PLATFORM_INTERDIGIT_TIMEOUT
                                                     ,Call
                                                    ).
 
