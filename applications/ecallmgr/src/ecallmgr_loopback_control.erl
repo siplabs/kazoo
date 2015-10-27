@@ -25,7 +25,15 @@
 -define(QUEUE_OPTIONS, []).
 -define(CONSUME_OPTIONS, []).
 
--record(state, {call_id, endpoint, endpoints, control_q, reply_to, self = self()}).
+-record(state, {call_id
+                ,endpoint
+                ,endpoints
+                ,control_q
+                ,reply_to
+                ,call_vars = wh_json:new()
+                ,channel_vars = wh_json:new()
+                ,self = self()
+               }).
 
 -include("ecallmgr.hrl").
 
@@ -41,7 +49,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(Endpoint) ->
-    CallId = <<<<"loopback-">>/binary, (couch_mgr:get_uuid())/binary>>,
+    CallId = <<"loopback-", (couch_mgr:get_uuid())/binary>>,
     Bindings = [{'call', [{'callid', CallId}]}
                 ,{'dialplan', []}
                 ,{'self', []}
@@ -112,14 +120,18 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({gen_listener, {created_queue, CtrlQ}}, #state{call_id = CallId, endpoint = E} = State) ->
+handle_cast({gen_listener, {created_queue, CtrlQ}}, #state{call_id = CallId
+                                                           ,endpoint = E
+                                                           ,call_vars = CallVars
+                                                           ,channel_vars = CCVs
+                                                          } = State) ->
     NewState = State#state{control_q = CtrlQ},
-    CCVs = wh_json:get_value(<<"Custom-Channel-Vars">>, E),
+    EndpointCCVs = wh_json:get_value(<<"Custom-Channel-Vars">>, E),
     Realm = wh_json:get_value(<<"To-Realm">>, E),
     Number = wh_json:get_value(<<"Route">>, E),
     ResourceType = <<"audio">>,
 %    ResourceType = wh_json:get_value(<<"Resource-Type">>, JObj, <<"audio">>),
-    Req = [{<<"From">>, <<"unknown@unknown">>}
+    RouteReq = [{<<"From">>, <<"unknown@unknown">>}
            ,{<<"To">>, <<"unknown@unknown">>}
            ,{<<"Request">>, <<Number/binary, "@", Realm/binary>>}
            ,{<<"Call-ID">>, CallId}
@@ -129,25 +141,31 @@ handle_cast({gen_listener, {created_queue, CtrlQ}}, #state{call_id = CallId, end
            ,{<<"Custom-Channel-Vars">>, CCVs}
            | wh_api:default_headers(<<"dialplan">>, <<"route_req">>, ?APP_NAME, ?APP_VERSION)
           ],
-    {ok, Resp} = wh_amqp_worker:call(Req
+    {ok, Resp} = wh_amqp_worker:call(RouteReq
                                      ,fun wapi_route:publish_req/1
                                      ,fun wapi_route:is_actionable_resp/1
                                      ,2000),
+    RespCCVs = wh_json:get_value(<<"Custom-Channel-Vars">>, Resp, wh_json:new()),
+    RespCallVars = wh_json:get_value(<<"Custom-Call-Vars">>, Resp, wh_json:new()),
     lager:debug([{trace, true}], "resp ~p", [Resp]),
     ServerId = wh_json:get_value(<<"Server-ID">>, Resp),
-    ReqWin = [{<<"Call-ID">>, CallId}
+    RouteWin = [{<<"Call-ID">>, CallId}
               ,{<<"Custom-Channel-Vars">>, CCVs}
               ,{<<"Server-ID">>, ServerId}
               ,{<<"Control-Queue">>, CtrlQ}
               | wh_api:default_headers(<<"dialplan">>, <<"route_win">>
                                        ,?APP_NAME, ?APP_VERSION)],
-    wh_amqp_worker:cast(ReqWin
+    wh_amqp_worker:cast(RouteWin
                         ,fun(Payload) -> wapi_route:publish_win(ServerId, Payload) end
                        ),
-    {noreply, NewState};
+    {noreply, NewState#state{channel_vars = [RespCCVs, EndpointCCVs | CCVs]
+                             ,call_vars = [RespCallVars | CallVars]
+                            }};
 handle_cast({call_command, Cmd}, State) ->
     Application = wh_json:get_value(<<"Application-Name">>, Cmd),
     handle_command(Application, Cmd, State);
+handle_cast({gen_listener,{is_consuming,true}}, State) ->
+    {noreply, State};
 handle_cast(_Msg, State) ->
     lager:debug([{trace, true}], "unknown cast ~p", [_Msg]),
     {noreply, State}.
@@ -166,6 +184,13 @@ handle_info(_Info, State) ->
     lager:debug([{trace, true}], "unknown info ~p", [_Info]),
     {noreply, State}.
 
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%%
+%% @spec handle_event(Event, State) -> {reply, proplist()}
+%% @end
+%%--------------------------------------------------------------------
 handle_event(_Event, #state{self = Self} = _State) ->
     {'reply', [{self, Self}]}.
 
@@ -197,8 +222,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-%handle_command(<<"set">>, _Data, State) ->
-%    {noreply, State};
+%handle_command(<<"set">>, Data, #state{channel_vars = CCVs} = State) ->
+%    {noreply, State#state{channel_vars = [Data | CCVs]}};
 handle_command(<<"bridge">>, Data, State) ->
     Endpoints = wh_json:get_value(<<"Endpoints">>, Data, []),
     NewState = State#state{endpoints = Endpoints},
@@ -214,6 +239,7 @@ maybe_reply(#state{reply_to = undefined} = State) ->
 maybe_reply(#state{endpoints = undefined} = State) ->
     lager:debug("endpoints are undefined"),
     {noreply, State};
-maybe_reply(#state{reply_to = ReplyTo, endpoints = Endpoints} = State) ->
+maybe_reply(#state{reply_to = ReplyTo, endpoints = Endpoints, channel_vars = CCVs} = State) ->
+    lager:debug("ccvs ~p", [CCVs]),
     gen_server:reply(ReplyTo, {ok, Endpoints}),
     {noreply, State}.
