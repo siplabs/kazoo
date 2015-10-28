@@ -30,8 +30,8 @@
                 ,endpoints
                 ,control_q
                 ,reply_to
-                ,call_vars = wh_json:new()
-                ,channel_vars = wh_json:new()
+                ,call_vars = []
+                ,channel_vars = []
                 ,self = self()
                }).
 
@@ -158,6 +158,7 @@ handle_cast({gen_listener, {created_queue, CtrlQ}}, #state{call_id = CallId
     wh_amqp_worker:cast(RouteWin
                         ,fun(Payload) -> wapi_route:publish_win(ServerId, Payload) end
                        ),
+    lager:debug([{trace, true}], "published route win"),
     {noreply, NewState#state{channel_vars = [RespCCVs, EndpointCCVs | CCVs]
                              ,call_vars = [RespCallVars | CallVars]
                             }};
