@@ -138,7 +138,7 @@ handle_cast({gen_listener, {created_queue, CtrlQ}}, #state{call_id = CallId
            ,{<<"Caller-ID-Number">>, <<"0">>}
            ,{<<"Caller-ID-Name">>, <<"Loopback">>}
            ,{<<"Resource-Type">>, ResourceType}
-           ,{<<"Custom-Channel-Vars">>, CCVs}
+           ,{<<"Custom-Channel-Vars">>, EndpointCCVs}
            | wh_api:default_headers(<<"dialplan">>, <<"route_req">>, ?APP_NAME, ?APP_VERSION)
           ],
     {ok, Resp} = wh_amqp_worker:call(RouteReq
@@ -223,8 +223,11 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-%handle_command(<<"set">>, Data, #state{channel_vars = CCVs} = State) ->
-%    {noreply, State#state{channel_vars = [Data | CCVs]}};
+handle_command(<<"set">>, Data, #state{channel_vars = ChannelVars, call_vars = CallVars} = State) ->
+    DataCallVars = wh_json:get_value(<<"Custom-Call-Vars">>, Data, wh_json:new()),
+    DataChannelVars = wh_json:get_value(<<"Custom-Channel-Vars">>, Data, wh_json:new()),
+    {noreply, State#state{channel_vars = [DataChannelVars | ChannelVars]
+                          ,call_vars = [DataCallVars | CallVars]}};
 handle_command(<<"bridge">>, Data, State) ->
     Endpoints = wh_json:get_value(<<"Endpoints">>, Data, []),
     NewState = State#state{endpoints = Endpoints},
@@ -240,7 +243,11 @@ maybe_reply(#state{reply_to = undefined} = State) ->
 maybe_reply(#state{endpoints = undefined} = State) ->
     lager:debug("endpoints are undefined"),
     {noreply, State};
-maybe_reply(#state{reply_to = ReplyTo, endpoints = Endpoints, channel_vars = CCVs} = State) ->
-    lager:debug("ccvs ~p", [CCVs]),
+maybe_reply(#state{reply_to = ReplyTo
+                   ,endpoints = Endpoints
+                   ,call_vars = CallVars
+                   ,channel_vars = ChannelVars} = State) ->
+    lager:debug("call vars ~p", [CallVars]),
+    lager:debug("channel vars ~p", [ChannelVars]),
     gen_server:reply(ReplyTo, {ok, Endpoints}),
     {noreply, State}.
