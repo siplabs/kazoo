@@ -535,8 +535,8 @@ normalized_endpoints_acc(Endpoint, Acc) ->
 build_originate_args_from_endpoints(Action, Endpoints, JObj, FetchId) ->
     lager:debug("building originate command arguments"),
     DialSeparator = ecallmgr_util:get_dial_separator(JObj, Endpoints),
-    lager:debug([{trace, true}], "Endpoints ~p", [Endpoints]),
-    lager:debug([{trace, true}], "jsobj ~p", [JObj]),
+    [lager:debug([{trace, true}], "endpoint ~p", [X]) || X <- Endpoints],
+    [lager:debug([{trace, true}], "~s: ~p", [X, Y]) || {X, Y} <- wh_json:to_proplist(JObj), X /= <<"Endpoints">>],
     {LoopbackEndpoints, NormalEndpoints} = lists:splitwith(fun is_loopback/1, Endpoints),
     NormalizedEndpoints = lists:foldl(fun normalized_endpoints_acc/2, NormalEndpoints, LoopbackEndpoints),
     lager:debug("normalized endpoints ~p", [NormalizedEndpoints]),
