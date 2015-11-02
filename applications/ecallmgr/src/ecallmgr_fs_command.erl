@@ -29,7 +29,7 @@ set(Node, UUID, [{K,V}|KVs]) ->
                                    [Val, "=", Key, ";" | Acc]
                            end, [V, "=", K], KVs),
     Set = list_to_binary([UUID, " ", lists:reverse(Multiset)]),
-    lager:debug("~s api uuid_setvar_mulit ~s", [Node, Set]),
+    lager:debug("~s api uuid_setvar_mulit ~s", [wh_util:to_binary(Node), Set]),
     freeswitch:api(Node, 'uuid_setvar_multi', Set).
 
 set(Node, UUID, K, V) -> set(Node, UUID, [{K, V}]).
@@ -39,7 +39,7 @@ set(Node, UUID, K, V) -> set(Node, UUID, [{K, V}]).
 export(_, _, []) -> 'ok';
 export(Node, UUID, [{K,V}|Exports]) ->
     Export = <<K/binary, "=", V/binary>>,
-    lager:debug("~s sendmsg export ~s ~s", [Node, UUID, Export]),
+    lager:debug("~s sendmsg export ~s ~s", [wh_util:to_binary(Node), UUID, Export]),
     freeswitch:sendmsg(Node, UUID, [{"call-command", "execute"}
                                     ,{"execute-app-name", "export"}
                                     ,{"execute-app-arg", wh_util:to_list(Export)}
@@ -50,7 +50,7 @@ export(Node, UUID, [{K,V}|Exports]) ->
 bridge_export(_, _, []) -> 'ok';
 bridge_export(Node, UUID, [{K,V}|Exports]) ->
     Export = <<K/binary, "=", V/binary>>,
-    lager:debug("~s sendmsg bridge_export ~s ~s", [Node, UUID, Export]),
+    lager:debug("~s sendmsg bridge_export ~s ~s", [wh_util:to_binary(Node), UUID, Export]),
     freeswitch:sendmsg(Node, UUID, [{"call-command", "execute"}
                                     ,{"execute-app-name", "bridge_export"}
                                     ,{"execute-app-arg", wh_util:to_list(Export)}
@@ -58,7 +58,7 @@ bridge_export(Node, UUID, [{K,V}|Exports]) ->
     bridge_export(Node, UUID, Exports).
 
 record_call(Node, UUID, Args) ->
-    lager:debug("execute on node ~s: uuid_record(~s)", [Node, Args]),
+    lager:debug("execute on node ~s: uuid_record(~s)", [wh_util:to_binary(Node), Args]),
     case freeswitch:api(Node, 'uuid_record', Args) of
         {'ok', _Msg}=Ret ->
             lager:debug("executing uuid_record returned: ~s", [_Msg]),

@@ -534,6 +534,12 @@ normalized_endpoints_acc(Endpoint, Acc) ->
                                                  ne_binary().
 build_originate_args_from_endpoints(Action, Endpoints, JObj, FetchId) ->
     lager:debug("building originate command arguments"),
+    try
+        f:unknonw()
+    catch
+        _:_ ->
+            wh_util:log_stacktrace()
+    end,
     DialSeparator = ecallmgr_util:get_dial_separator(JObj, Endpoints),
     [lager:debug([{trace, true}], "endpoint ~p", [X]) || X <- Endpoints],
     [lager:debug([{trace, true}], "~s: ~p", [X, Y]) || {X, Y} <- wh_json:to_proplist(JObj), X /= <<"Endpoints">>],
@@ -542,6 +548,7 @@ build_originate_args_from_endpoints(Action, Endpoints, JObj, FetchId) ->
     lager:debug("normalized endpoints ~p", [NormalizedEndpoints]),
     DialStrings = ecallmgr_util:build_bridge_string(NormalizedEndpoints, DialSeparator),
     lager:debug([{trace, true}], "dial string end: ~p", [DialStrings]),
+    lager:debug([{trace, true}], "action ~p", [Action]),
 
     ChannelVars = get_channel_vars(JObj, FetchId),
 

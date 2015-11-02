@@ -110,6 +110,8 @@ api(Node, Cmd) ->
     api(Node, Cmd, "").
 api(Node, Cmd, Args) ->
     api(Node, Cmd, Args, ?TIMEOUT).
+api(Pid, Cmd, Args, Timeout) when is_pid(Pid) ->
+    gen_server:call(Pid, {'api', Cmd, Args}, Timeout);
 api(Node, Cmd, Args, Timeout) ->
     try gen_server:call({'mod_kazoo', Node}, {'api', Cmd, Args}, Timeout) of
         'timeout' -> {'error', 'timeout'};
@@ -246,12 +248,18 @@ nixevent(Node, [_|_]=Events) ->
 nixevent(Node, Event) ->
     nixevent(Node, [Event]).
 
+sendevent(Pid, EventName, Headers) when is_pid(Pid) ->
+    gen_server:cast(Pid, {'sendevent', EventName, Headers});
 sendevent(Node, EventName, Headers) ->
     gen_server:cast({'mod_kazoo', Node}, {'sendevent', EventName, Headers}).
 
 -spec sendevent_custom(atom(), atom(), list()) -> 'ok'.
+sendevent_custom(Pid, SubClassName, Headers) when is_pid(Pid) ->
+    gen_server:cast(Pid, {'sendevent', 'CUSTOM',  SubClassName, Headers});
 sendevent_custom(Node, SubClassName, Headers) ->
     gen_server:cast({'mod_kazoo', Node}, {'sendevent', 'CUSTOM',  SubClassName, Headers}).
 
+sendmsg(Pid, UUID, Headers) when is_pid(Pid) ->
+    gen_server:call(Pid, {'sendmsg', UUID, Headers});
 sendmsg(Node, UUID, Headers) ->
     gen_server:call({'mod_kazoo', Node}, {'sendmsg', UUID, Headers}).

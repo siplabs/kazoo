@@ -87,6 +87,7 @@ handle_call_command(JObj, Props) ->
 %% @end
 %%--------------------------------------------------------------------
 init([CallId, Endpoint]) ->
+    wh_util:put_callid(CallId),
     {ok, #state{call_id = CallId, endpoint = Endpoint}}.
 
 %%--------------------------------------------------------------------
@@ -103,6 +104,9 @@ init([CallId, Endpoint]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_call({api, _App, _Data}, _From, State) ->
+    lager:debug([{trace, true}], "api call: application ~s, data ~p", [_App, _Data]),
+    {reply, {ok, <<"loopback">>}, State};
 handle_call(get_endpoints, From, State) ->
     lager:debug([{trace, true}], "get endpoints"),
     maybe_reply(State#state{reply_to = From});
@@ -232,9 +236,10 @@ handle_command(<<"bridge">>, Data, State) ->
     Endpoints = wh_json:get_value(<<"Endpoints">>, Data, []),
     NewState = State#state{endpoints = Endpoints},
     maybe_reply(NewState);
-handle_command(_Application, _Data, State) ->
-    lager:debug([{trace, true}], "unknown application ~p", [_Application]),
-    lager:debug([{trace, true}], "data ~p", [_Data]),
+handle_command(Application, Data, #state{call_id = CallId} = State) ->
+    lager:debug([{trace, true}], "unknown application ~p", [Application]),
+    lager:debug([{trace, true}], "data ~p", [Data]),
+    fs_cmd(CallId, Data),
     {noreply, State}.
 
 maybe_reply(#state{reply_to = undefined} = State) ->
@@ -251,3 +256,13 @@ maybe_reply(#state{reply_to = ReplyTo
     lager:debug("channel vars ~p", [ChannelVars]),
     gen_server:reply(ReplyTo, {ok, Endpoints}),
     {noreply, State}.
+
+fs_cmd(CallId, Data) ->
+    spawn(send_fs_cmd(CallId, Data)).
+
+send_fs_cmd(CallId, Data) ->
+    wh_util:put_callid(CallId),
+    Self = self(),
+    fun() ->
+            ecallmgr_call_command:exec_cmd(Self, CallId, Data, Self)
+    end.
