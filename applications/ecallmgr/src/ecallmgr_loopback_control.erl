@@ -107,6 +107,9 @@ init([CallId, Endpoint]) ->
 handle_call({api, _App, _Data}, _From, State) ->
     lager:debug([{trace, true}], "api call: application ~s, data ~p", [_App, _Data]),
     {reply, {ok, <<"loopback">>}, State};
+handle_call({sendmsg, _CallId, Cmd}, _From, State) ->
+    lager:debug([{trace, true}], "sendmsg to ~p: ~p", [_CallId, Cmd]),
+    {reply, {ok, <<"loopback">>}, State};
 handle_call(get_endpoints, From, State) ->
     lager:debug([{trace, true}], "get endpoints"),
     maybe_reply(State#state{reply_to = From});
