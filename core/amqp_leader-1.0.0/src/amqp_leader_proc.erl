@@ -1625,11 +1625,17 @@ send_checkleads(Name, Time, GlProc, Down) ->
 	erlang:send_after(Time, GlProc, {send_checklead})
 	.
 
-send(_Pid, _Msg) ->
-    _Pid, _Msg.
+send(Pid, Msg) ->
+    Pid ! Msg.
 
-gen_call(_Pid, _Tag, _Req) ->
-    gen:call(_Pid, _Tag, _Req).
+gen_call(Pid, Tag, Request) ->
+    gen_call(Pid, Tag, Request, 5 * 1000).
 
-gen_call(_Pid, _Tag, _Req, _Timeout) ->
-    gen:call(_Pid, _Tag, _Req, _Timeout).
+gen_call(Pid, Tag, Request, Timeout) ->
+    Ref = erlang:make_ref(),
+    send(Pid, {Tag, {self(), Ref}, Request}),
+    receive
+        {Ref, Reply} -> {ok, Reply}
+    after Timeout ->
+              exit(timeout)
+    end.
