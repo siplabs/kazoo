@@ -9,6 +9,7 @@
 
 -include_lib("whistle/include/wh_types.hrl").
 
+-export([start_link/6]).
 -export([start_link/0
          ,start/0
          ,stop/0
@@ -26,6 +27,9 @@ start_link() ->
     _ = declare_exchanges(),
     amqp_leader_sup:start_link().
 
+-spec start_link(atom(), atoms(), list(), atom(), list(), list()) -> startlink_ret().
+start_link(Name, Nodes, Opts, Module, [], []) ->
+    amqp_leader_sup:start_leader(Name, Nodes, Opts, Module, [], []).
 %%--------------------------------------------------------------------
 %% @public
 %% @doc

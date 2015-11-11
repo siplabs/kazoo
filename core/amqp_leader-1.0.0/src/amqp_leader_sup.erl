@@ -9,10 +9,11 @@
 
 -behaviour(supervisor).
 
+-export([start_leader/6]).
 -export([start_link/0]).
 -export([init/1]).
 
--include("amqp_leader.hrl").
+-include_lib("whistle/include/wh_types.hrl").
 
 %% Helper macro for declaring children of supervisor
 -define(CHILDREN, []).
@@ -30,6 +31,14 @@
 -spec start_link() -> startlink_ret().
 start_link() ->
     supervisor:start_link({'local', ?MODULE}, ?MODULE, []).
+
+-spec start_leader(atom(), atoms(), list(), atom(), list(), list()) -> startlink_ret().
+start_leader(Name, Nodes, Opts, Module, [], []) ->
+    supervisor:start_child(?MODULE
+                           ,?SUPER_NAME_ARGS_TYPE(Name
+                                                  ,'amqp_leader_proc_sup'
+                                                  ,[Name, Nodes, Opts, Module, [], []]
+                                                  ,'transient')).
 
 %% ===================================================================
 %% Supervisor callbacks
