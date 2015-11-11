@@ -90,6 +90,9 @@
          send_checkleads/4
         ]).
 
+-compile({no_auto_import,[node/1]}).
+
+-include("amqp_leader.hrl").
 
 %% Notification control of candidate membership changes. `all'
 %% means that returns from the handle_DOWN/3 and elected/3 leader's events
@@ -114,7 +117,7 @@
 %% A monitor ref
 -type mon_ref() :: reference().
 
--type server_ref() :: name() | {name(),node()} | {global,name()} | pid().
+%-type server_ref() :: name() | {name(),node()} | {global,name()} | pid().
 
 %% Incarnation number
 -type incarn() :: non_neg_integer().
@@ -465,11 +468,11 @@ init_it(Starter,Parent,Name,Mod,{UnsortedCandidateNodes,OptArgs,Arg},Options) ->
             proc_lib:init_ack(Starter, {error, Reason}),
             exit(Reason);
         {{ok, State}, true, false} ->
+            init_ack_ok(Starter),
             Server = #server{parent = Parent,mod = Mod,
                              state = State,debug = Debug},
             Incarn = incarnation(VarDir, Name, node()),
             NewE = startStage1(Election#election{incarn = Incarn}, Server),
-            proc_lib:init_ack(Starter, {ok, self()}),
 
             %% handle the case where there's only one candidate worker and we can't
             %% rely on DOWN messages to trigger the elected() call because we never get
@@ -483,15 +486,15 @@ init_it(Starter,Parent,Name,Mod,{UnsortedCandidateNodes,OptArgs,Arg},Options) ->
                     safe_loop(Server, candidate, NewE,{init})
             end;
         {{ok, State}, true, true} ->
+            init_ack_ok(Starter),
             Server = #server{parent = Parent,mod = Mod,
                              state = State,debug = Debug},
             Incarn = incarnation(VarDir, Name, node()),
             NewE1 = Election#election{incarn = Incarn, seed_node = Seed},
             NewE = joinCluster(NewE1, Server),
-            proc_lib:init_ack(Starter, {ok, self()}),
             safe_loop(Server, candidate_joining, NewE, {init});
         {{ok, State}, false, HasSeed} ->
-            proc_lib:init_ack(Starter, {ok, self()}),
+            init_ack_ok(Starter),
             Candidates = case HasSeed of
                              true ->
                                  {ok, C} = call({Name, Seed}, get_candidates),
@@ -500,8 +503,8 @@ init_it(Starter,Parent,Name,Mod,{UnsortedCandidateNodes,OptArgs,Arg},Options) ->
                          end,
             case lists:member(node(), Workers) of
                 true ->
-                    rpc:multicall(Candidates, gen_leader,
-                                  worker_announce, [Name, node(self())]);
+                    rpc_multicall(Candidates, ?MODULE,
+                                  worker_announce, [Name, node()]);
                 false -> nop
             end,
             safe_loop(#server{parent = Parent,mod = Mod,
@@ -513,6 +516,11 @@ init_it(Starter,Parent,Name,Mod,{UnsortedCandidateNodes,OptArgs,Arg},Options) ->
             exit(Error)
     end.
 
+init_ack_ok(Starter) ->
+    proc_lib:init_ack(Starter, {ok, self()}),
+    true = amqp_leader_listener:is_ready(),
+    wh_util:put_callid(wapi_leader:queue()),
+    ok.
 
 %%% ---------------------------------------------------
 %%% The MAIN loops.
@@ -535,12 +543,12 @@ safe_loop(#server{mod = Mod, state = State} = Server, Role,
             safe_loop(Server,Role,E,Msg);
         {halt,T,From} = Msg ->
             NewE = halting(E,T,From,Server),
-            send(From,  {ackLeader,T,self()}),
+            send(From,  {ackLeader,T,{Name, node()}}),
             safe_loop(Server,Role,NewE,Msg);
         {hasLeader,Ldr,T,_} = Msg when Role == candidate_joining ->
             NewE1 = mon_node(E,Ldr,Server),
             NewE = NewE1#election{elid = T, leadernode = node(Ldr)},
-            send(Ldr, {isLeader, T, self()}),
+            send(Ldr, {isLeader, T, {Name, node()}}),
             safe_loop(Server,Role,NewE,Msg);
         {hasLeader,Ldr,T,_} = Msg ->
             NewE1 = mon_node(E,Ldr,Server),
@@ -548,7 +556,7 @@ safe_loop(#server{mod = Mod, state = State} = Server, Role,
                 true ->
                     lists:foreach(
                       fun(Node) ->
-                              send({Name,Node}, {hasLeader,Ldr,T,self()})
+                              send({Name,Node}, {hasLeader,Ldr,T,{Name, node()}})
                       end,E#election.acks);
                 false ->
                     ok
@@ -558,10 +566,10 @@ safe_loop(#server{mod = Mod, state = State} = Server, Role,
                                   leadernode = node(Ldr),
                                   down = E#election.down -- [node(Ldr)],
                                   acks = []},
-            send(Ldr, {isLeader,T,self()}),
+            send(Ldr, {isLeader,T,{Name, node()}}),
             safe_loop(Server,Role,NewE,Msg);
         {isLeader,T,From} = Msg ->
-            send(From, {notLeader,T,self()}),
+            send(From, {notLeader,T,{Name, node()}}),
             safe_loop(Server,Role,E,Msg);
         {notLeader,T,_} = Msg when Role == candidate_joining ->
             NewE = case E#election.elid == T of
@@ -636,7 +644,7 @@ safe_loop(#server{mod = Mod, state = State} = Server, Role,
                             and (E#election.elid == T) ) ) of
                     true ->
                         NE = halting(E,T,From,Server),
-                        send(From, {notNorm,T,self()}),
+                        send(From, {notNorm,T,{Name, node()}}),
                         NE;
                     false ->
                         E
@@ -653,7 +661,7 @@ safe_loop(#server{mod = Mod, state = State} = Server, Role,
                         NE = mon_node(E#election{leadernode = node(From),
                                                    elid = T},
                                         From, Server),
-                        send(From, {workerIsAlive,T,self()}),
+                        send(From, {workerIsAlive,T,{Name, node()}}),
                         NE;
                     false ->
                         %% We should acutally ignore this, the present activation
@@ -705,7 +713,7 @@ safe_loop(#server{mod = Mod, state = State} = Server, Role,
                     case ( pos(Node,E#election.candidate_nodes) >
                              pos(node(),E#election.candidate_nodes) ) of
                         true ->
-                            send({Name, Node}, {heartbeat, self()});
+                            send({Name, Node}, {heartbeat, {Name, node()}});
                         _ ->
                             ok
                    end;
@@ -808,7 +816,7 @@ loop(#server{parent = Parent,
                     terminate(Reason, Msg, Server, Role, E);
 
                 {join, From} ->
-                    send(From, {hasLeader,E#election.leader,E#election.elid,self()}),
+                    send(From, {hasLeader,E#election.leader,E#election.elid,{Name, node()}}),
                     loop(Server,Role,E,Msg);
                 {update_candidates, T, Candidates, _From} ->
                     case E#election.elid == T of
@@ -819,12 +827,12 @@ loop(#server{parent = Parent,
                             loop(Server, Role, E, Msg)
                     end;
                 {halt,_,From} ->
-                    send(From, {hasLeader,E#election.leader,E#election.elid,self()}),
+                    send(From, {hasLeader,E#election.leader,E#election.elid,{Name, node()}}),
                     loop(Server,Role,E,Msg);
                 {hasLeader,_,_,_} ->
                     loop(Server,Role,E,Msg);
                 {isLeader,T,From} ->
-                    case (self() == E#election.leader) of
+                    case ({Name, node()} == E#election.leader) of
                         true ->
                             NewCandidates =
                                 case lists:member(node(From), candidates(E)) of
@@ -835,7 +843,7 @@ loop(#server{parent = Parent,
                                           fun(Node) ->
                                                   send({Name, Node}
                                                        ,{update_candidates, E#election.elid
-                                                         ,NC, self()})
+                                                         ,NC, {Name, node()}})
                                           end, candidates(E) -- lists:flatten([node()],down(E))),
                                         NC
                                 end,
@@ -846,7 +854,7 @@ loop(#server{parent = Parent,
                             NewState = call_elected(Mod, State, NewE, From),
                             loop(Server#server{state = NewState},Role,NewE,Msg);
                         false ->
-                            send(From, {notLeader,T,self()}),
+                            send(From, {notLeader,T,{Name, node()}}),
                             loop(Server,Role,E,Msg)
                     end;
                 {ackLeader,_,_} ->
@@ -860,7 +868,7 @@ loop(#server{parent = Parent,
                 {normQ,_,_} ->
                     loop(Server,Role,E,Msg);
                 {notNorm,T,From} ->
-                    case ( (E#election.leader == self())
+                    case ( (E#election.leader == {Name, node()})
                            and (E#election.elid == T) ) of
                         true ->
                             NewDown = E#election.down -- [node(From)],
@@ -881,7 +889,7 @@ loop(#server{parent = Parent,
                     %% It must be an old message!
                     loop(Server,Role,E,Msg);
                 {workerIsAlive,T,From} ->
-                    case ((T == E#election.elid) and (self() == E#election.leader)) of
+                    case ((T == E#election.elid) and ({Name, node()} == E#election.leader)) of
                         true ->
                             NewDown = E#election.work_down -- [node(From)],
                             NewE = mon_node(E#election{work_down = NewDown},
@@ -900,7 +908,7 @@ loop(#server{parent = Parent,
                         true ->
                             %% Leaders match, nothing to do
                             loop(Server, Role, E, Msg);
-                        false when E#election.leader == self() ->
+                        false when E#election.leader == {Name, node()} ->
                             %% We're a leader and we disagree with the other
                             %% leader. Tell everyone else to have an election.
                             lists:foreach(
@@ -916,7 +924,7 @@ loop(#server{parent = Parent,
                             loop(Server, Role, E, Msg)
                     end;
                 {send_checklead} ->
-                    case (E#election.leader == self()) of
+                    case (E#election.leader == {Name, node()}) of
                         true ->
                             case E#election.down of
                                 [] ->
@@ -926,25 +934,25 @@ loop(#server{parent = Parent,
                                     %% a message comparing their leader to our
                                     %% own. This allows us to trigger an
                                     %% election after a netsplit is healed.
-                                    spawn(?MODULE, send_checkleads, [Name, E#election.cand_timer_int, self(), Down]),
+                                    spawn(?MODULE, send_checkleads, [Name, E#election.cand_timer_int, {Name, node()}, Down]),
                                     loop(Server, Role, E, Msg)
                             end;
                         false ->
                             loop(Server, Role, E, Msg)
                     end;
                 {heartbeat, _Node} ->
-                    case (E#election.leader == self()) of
+                    case (E#election.leader == {Name, node()}) of
                         true ->
                             Candidates = E#election.down -- [lists:nth(1,E#election.candidate_nodes)],
                             lists:foreach(
                               fun(N) ->
                                       Elid = E#election.elid,
-                                      send({Name,N}, {normQ,Elid,self()})
+                                      send({Name,N}, {normQ,Elid,{Name, node()}})
                               end,Candidates),
                             lists:foreach(
                               fun(N) ->
                                       Elid = E#election.elid,
-                                      send({Name,N}, {workerAlive,Elid,self()})
+                                      send({Name,N}, {workerAlive,Elid,{Name, node()}})
                               end,E#election.work_down);
                         false ->
                             ok
@@ -1124,9 +1132,9 @@ handle_msg({from_leader, Cmd} = Msg,
     handle_common_reply(catch Mod:from_leader(Cmd, State, NewE),
                         Msg, Server, Role, NewE);
 handle_msg({'$leader_call', From, Request} = Msg, Server, Role,
-           #election{buffered = Buffered, leader = Leader} = E) ->
+           #election{buffered = Buffered, leader = Leader, name = Name} = E) ->
     Ref = make_ref(),
-    send(Leader, {'$leader_call', {self(),Ref}, Request}),
+    send(Leader, {'$leader_call', {{Name, node()},Ref}, Request}),
     NewBuffered = [{Ref,From}|Buffered],
     loop(Server, Role, E#election{buffered = NewBuffered},Msg);
 handle_msg({Ref, {leader,reply,Reply}} = Msg, Server, Role,
@@ -1345,17 +1353,17 @@ startStage2(E, Server) ->
     continStage2(E#election{status = elec2, pendack = node(), acks = []},
                  Server).
 
-continStage2(E, Server) ->
+continStage2(#election{name = Name} = E, Server) ->
     case (pos(E#election.pendack,E#election.candidate_nodes)
           < length(E#election.candidate_nodes)) of
         true ->
             Pendack = next(E#election.pendack,E#election.candidate_nodes),
             NewE = mon_nodes(E, [Pendack], Server),
-            send({E#election.name,Pendack}, {halt,E#election.elid,self()}),
+            send({E#election.name,Pendack}, {halt,E#election.elid,{Name, node()}}),
             NewE#election{pendack = Pendack};
         false ->
             %% I am the leader
-            E#election{leader = self(),
+            E#election{leader = {Name, node()},
                        leadernode = node(),
                        previous_leader = E#election.leader,
                        status = norm}
@@ -1371,23 +1379,23 @@ halting(E,T,From,Server) ->
                  }.
 
 
-joinCluster(E, Server) ->
-    Pid = {E#election.name, E#election.seed_node},
-    send(Pid, {join, self()}),
+joinCluster(#election{name = Name} = E, Server) ->
+    Pid = {Name, E#election.seed_node},
+    send(Pid, {join, {Name, node()}}),
     NewE = mon_node(E, Pid, Server),
     NewE#election{status = joining}.
 
 
 %%% checks if the proc has become the leader, if so switch to loop
-hasBecomeLeader(E,Server,Msg) ->
-    case ((E#election.status == norm) and (E#election.leader == self())) of
+hasBecomeLeader(#election{name = Name} = E,Server,Msg) ->
+    case ((E#election.status == norm) and (E#election.leader == {Name, node()})) of
         true ->
             {ok,Synch,NewState} =
                 (Server#server.mod):elected(Server#server.state,E,undefined),
             lists:foreach(
               fun(Node) ->
                       send({E#election.name,Node}
-                           , {ldr, Synch, E#election.elid, workers(E), candidates(E), self()})
+                           , {ldr, Synch, E#election.elid, workers(E), candidates(E), {Name, node()}})
               end,E#election.acks),
 
             %% Make sure we will try to contact all workers!
@@ -1403,7 +1411,7 @@ hasBecomeLeader(E,Server,Msg) ->
             {NewState2, NewE2} =
                 case PrevLeader of
                     none -> {NewState, NewE};
-                    Pid when is_pid(Pid) ->
+                    {_, _} ->
                         case lists:member(node(PrevLeader), down(E)) of
                             false -> {NewState, NewE};
                             true ->
@@ -1495,14 +1503,14 @@ broadcast_candidates(E, Synch, IgnoreNodes) ->
             ok
     end.
 
-call_elected(Mod, State, E, From) when is_pid(From) ->
+call_elected(Mod, State, #election{name = Name} = E, From) ->
     case Mod:elected(State,E,node(From)) of
         {ok,Synch,NewState} ->
-            send(From, {ldr,Synch,E#election.elid,workers(E),candidates(E),self()}),
+            send(From, {ldr,Synch,E#election.elid,workers(E),candidates(E),{Name, node()}}),
             broadcast_candidates(E, Synch, [From]),
             NewState;
         {reply, Synch, NewState} ->
-            send(From, {ldr,Synch,E#election.elid,workers(E),candidates(E),self()}),
+            send(From, {ldr,Synch,E#election.elid,workers(E),candidates(E),{Name, node()}}),
             NewState
     end.
 
@@ -1625,17 +1633,47 @@ send_checkleads(Name, Time, GlProc, Down) ->
 	erlang:send_after(Time, GlProc, {send_checklead})
 	.
 
-send(Pid, Msg) ->
-    Pid ! Msg.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% AMQP messages
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+send(Pid, Msg) when is_atom(Pid); node() =:= erlang:node(Pid); node() =:= element(2, Pid) ->
+    lager:debug([{trace, true}], "~s local message ~p: ~p", [node(), Msg, Pid]),
+    Pid ! Msg;
+send({Name, Node}, Msg) ->
+    Route = wapi_leader:route(Name, Node),
+    send(Route, Msg);
+send(Pid, Msg) when is_pid(Pid) ->
+    Route = wapi_leader:route(Pid),
+    send(Route, Msg);
+send(Route, Msg) ->
+    lager:debug([{trace, true}], "~s amqp  message ~p: ~p", [node(), Msg, Route]),
+    Props = [{<<"Message">>, wh_util:to_hex_binary(erlang:term_to_binary(Msg))}
+             | wh_api:default_headers(<<"leader">>, <<"message">>, ?APP_NAME, ?APP_VERSION)
+            ],
+    try
+        asd:asd()
+    catch
+        _:_ -> wh_util:log_stacktrace()
+    end,
+    wapi_leader:publish_req(Route, Props).
 
 gen_call(Pid, Tag, Request) ->
     gen_call(Pid, Tag, Request, 5 * 1000).
 
 gen_call(Pid, Tag, Request, Timeout) ->
     Ref = erlang:make_ref(),
-    send(Pid, {Tag, {self(), Ref}, Request}),
+    From = wapi_leader:whoami(),
+    send(Pid, {Tag, {From, Ref}, Request}),
     receive
         {Ref, Reply} -> {ok, Reply}
     after Timeout ->
               exit(timeout)
     end.
+
+rpc_multicall(_Nodes, ?MODULE, worker_announce, [Name, _Pid]) ->
+    Broadcast = wapi_leader:route(Name, "broadcast"),
+    send(Broadcast, {add_worker, node()}),
+    send(Broadcast, {heartbeat, node()}).
+
+node({_, Node}) -> Node;
+node(Pid) -> erlang:node(Pid).
