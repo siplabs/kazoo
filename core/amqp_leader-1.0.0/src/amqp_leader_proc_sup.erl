@@ -51,7 +51,7 @@ start_link(Name, Nodes, Opts, Module, [], []) ->
 init([Name, Nodes, Opts, Module, [], []]) ->
     {'ok', {{'one_for_all', 5, 10}
             ,[?WORKER_ARGS('amqp_leader_listener', [Name])
-              ,?WORKER_ARGS('amqp_leader_proc', [Name, Nodes, Opts, Module, [], [{debug, trace}]])
+              ,?WORKER_ARGS('amqp_leader_proc', [Name, Nodes, Opts, Module, [], []])
              ]
            }}.
 

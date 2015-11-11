@@ -420,14 +420,18 @@ init_it(Starter, Parent, {local, Name}, Mod, {CandidateNodes, Workers, Arg}, Opt
 init_it(Starter, self, Name, Mod, {CandidateNodes, OptArgs, Arg}, Options) ->
     init_it(Starter, self(), Name, Mod,
             {CandidateNodes, OptArgs, Arg}, Options);
-init_it(Starter,Parent,Name,Mod,{UnsortedCandidateNodes,OptArgs,Arg},Options) ->
+init_it(Starter,Parent,Name,Mod,{_UnsortedCandidateNodes,OptArgs,Arg},Options) ->
     Workers     = proplists:get_value(workers,   OptArgs, []),
     VarDir      = proplists:get_value(vardir,    OptArgs, "."),
     Interval    = proplists:get_value(heartbeat, OptArgs, ?TAU div 1000) * 1000,
     BcastType   = proplists:get_value(bcast_type,OptArgs, sender),
-    Seed        = proplists:get_value(seed,      OptArgs, none),
     Debug       = debug_options(Name, Options),
+    UnsortedCandidateNodes = get_nodes(Name),
     CandidateNodes = lists:sort(UnsortedCandidateNodes),
+    Seed = case CandidateNodes of
+               [SeedTo | _] when SeedTo == node() -> 'none';
+               [SeedTo | _]                       -> SeedTo
+           end,
     AmCandidate = case lists:member(node(), CandidateNodes) of
                       true -> true;
                       false ->
@@ -450,7 +454,7 @@ init_it(Starter,Parent,Name,Mod,{UnsortedCandidateNodes,OptArgs,Arg},Options) ->
     case {AmCandidate, lists:member(node(), Workers)} of
         {false, false} ->
             %% I am neither a candidate nor a worker - don't start this process
-            error_logger:warning_msg("~w not started - node is not a candidate/worker\n", [Name]),
+            lager:warning("~w not started - node is not a candidate/worker\n", [Name]),
             proc_lib:init_ack(Starter, ignore),
             exit(normal);
         _ ->
@@ -522,6 +526,19 @@ init_ack_ok(Starter) ->
     wh_util:put_callid(wapi_leader:queue()),
     ok.
 
+get_nodes(Name) ->
+    send({Name, 'broadcast'}, {'nodes', {Name, node()}}),
+    erlang:send_after(3000, self(), 'stop'),
+    recv_nodes([node()]).
+
+recv_nodes(Nodes) ->
+    receive
+        {'node', Node} ->
+            recv_nodes([Node | Nodes -- [Node]]);
+        'stop' ->
+            Nodes
+    end.
+
 %%% ---------------------------------------------------
 %%% The MAIN loops.
 %%% ---------------------------------------------------
@@ -532,6 +549,7 @@ init_ack_ok(Starter) ->
 % is complete.
 safe_loop(#server{mod = Mod, state = State} = Server, Role,
           #election{name = Name} = E, _PrevMsg) ->
+    lager:debug("entering safe loop"),
     receive
         {system, From, Req} ->
             #server{parent = Parent, debug = Debug} = Server,
@@ -795,7 +813,12 @@ safe_loop(#server{mod = Mod, state = State} = Server, Role,
                                 end
                         end
                 end,
-            hasBecomeLeader(NewE,Server,Msg)
+            hasBecomeLeader(NewE,Server,Msg);
+        {'nodes', From} = Msg ->
+            send(From, {'node', node()}),
+            safe_loop(Server, Role, E,Msg);
+        {'node', _} = Msg ->
+            safe_loop(Server, Role, E,Msg)
     end.
 
 
@@ -806,8 +829,10 @@ loop(#server{parent = Parent,
              state = State,
              debug = Debug} = Server, Role,
      #election{name = Name} = E, _PrevMsg) ->
+    lager:debug("entering loop"),
     receive
         Msg ->
+            lager:debug("received ~p", [Msg]),
             case Msg of
                 {system, From, Req} ->
                     sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
@@ -865,6 +890,23 @@ loop(#server{parent = Parent,
                     loop(Server,Role,E,Msg);
                 {ldr,_,_,_,_} ->
                     loop(Server,Role,E,Msg);
+                {ldr,Synch,T,Workers,Candidates,From} ->
+                    case (E#election.elid == T) and (Role == surrendered)
+                         and (From == E#election.leader)
+                    of
+                        true ->
+                            NewE = E#election{
+                                     worker_nodes = Workers,
+                                     candidate_nodes = Candidates
+                                    },
+                            {ok,NewState} = Mod:surrendered(State,Synch,NewE),
+                            loop(Server#server{state=NewState},Role,NewE,Msg);
+                        false ->
+                            lager:warning("I don't know what to do in this case"),
+                            lager:warning("msg ~p", [Msg]),
+                            lager:warning("election state ~p", [E]),
+                            loop(Server,Role,E,Msg)
+                    end;
                 {normQ,_,_} ->
                     loop(Server,Role,E,Msg);
                 {notNorm,T,From} ->
@@ -943,22 +985,14 @@ loop(#server{parent = Parent,
                 {heartbeat, _Node} ->
                     case (E#election.leader == {Name, node()}) of
                         true ->
-                            Candidates = E#election.down -- [lists:nth(1,E#election.candidate_nodes)],
-                            lists:foreach(
-                              fun(N) ->
-                                      Elid = E#election.elid,
-                                      send({Name,N}, {normQ,Elid,{Name, node()}})
-                              end,Candidates),
-                            lists:foreach(
-                              fun(N) ->
-                                      Elid = E#election.elid,
-                                      send({Name,N}, {workerAlive,Elid,{Name, node()}})
-                              end,E#election.work_down);
+                            Elid = E#election.elid,
+                            send({Name, 'broadcast'}, {normQ,Elid,{Name, node()}}),
+                            send({Name,'broadcast'}, {workerAlive,Elid,{Name, node()}});
                         false ->
                             ok
                     end,
                     loop(Server,Role,E,Msg);
-                {candidate_timer} = Msg ->
+                {candidate_timer} ->
                     NewE =
                         if E#election.down =:= [] orelse (Role =/= elected andalso E#election.leadernode =/= none) ->
                                 timer:cancel(E#election.cand_timer),
@@ -971,7 +1005,7 @@ loop(#server{parent = Parent,
                         end,
                     %% This shouldn't happen in the leader - just ignore
                     loop(Server,Role,NewE,Msg);
-                {ldr, 'DOWN', Node} = Msg when Role == worker ->
+                {ldr, 'DOWN', Node} when Role == worker ->
                     case Node == E#election.leadernode of
                         true ->
                             NewE = E#election{ leader = none, leadernode = none,
@@ -981,7 +1015,7 @@ loop(#server{parent = Parent,
                         false ->
                             loop(Server, Role, E,Msg)
                     end;
-                {ldr, 'DOWN', Node} = Msg ->
+                {ldr, 'DOWN', Node} ->
                     NewMon = lists:keydelete(Node, 2, E#election.monitored),
                     case lists:member(Node,E#election.candidate_nodes) of
                         true ->
@@ -1032,6 +1066,11 @@ loop(#server{parent = Parent,
                         true -> % Redundancy, meet the mirror
                             loop(Server, Role, E, Msg)
                     end;
+                {'nodes', From} ->
+                    send(From, {'node', node()}),
+                    loop(Server, Role, E, Msg);
+                {'node', _} ->
+                    loop(Server, Role, E, Msg);
                 _Msg when Debug == [] ->
                     handle_msg(Msg, Server, Role, E);
                 _Msg ->
@@ -1362,6 +1401,7 @@ continStage2(#election{name = Name} = E, Server) ->
             send({E#election.name,Pendack}, {halt,E#election.elid,{Name, node()}}),
             NewE#election{pendack = Pendack};
         false ->
+            lager:debug("I am the leader"),
             %% I am the leader
             E#election{leader = {Name, node()},
                        leadernode = node(),
@@ -1553,8 +1593,10 @@ mon_node(E,Proc,Server) when is_pid(Proc) ->
 
 spawn_monitor_proc() ->
     Parent = self(),
+    CallId = wapi_leader:queue(),
     proc_lib:spawn_link(
       fun() ->
+              wh_util:put_callid(CallId),
               mon_loop(Parent, [])
       end).
 
@@ -1574,7 +1616,7 @@ mon_loop(Parent, Refs) ->
         {'DOWN', Ref, _, _, _} ->
             mon_loop(Parent, mon_handle_down(Ref, Parent, Refs));
         Msg ->
-            io:fwrite("mon_loop with parent: ~p refs: ~p received: ~p~n", [Parent, Refs, Msg]),
+            lager:debug("mon_loop with parent: ~p refs: ~p received: ~p~n", [Parent, Refs, Msg]),
             mon_loop(Parent, Refs)
     end.
 
@@ -1593,10 +1635,11 @@ mon_handle_req({monitor, P}, From, Refs) ->
             [{Ref,Node}|Refs]
     end.
 
-mon_handle_down(Ref, Parent, Refs) ->
+mon_handle_down(Ref, _Parent, Refs) ->
     case lists:keytake(Ref, 1, Refs) of
         {value, {_, Node}, Refs1} ->
-            send(Parent, {ldr, 'DOWN', Node}),
+            lager:notice("node ~p down", [Node]),
+%            send(Parent, {ldr, 'DOWN', Node}),
             Refs1;
         false ->
             Refs
@@ -1628,16 +1671,18 @@ flush_candidate_timers() ->
 %% Reschedule the next round of checkleads after this round completes,
 %% since sending the messages can take longer than the time between rounds
 send_checkleads(Name, Time, GlProc, Down) ->
+    wh_util:put_callid(wapi_leader:queue(Name, node())),
 	Node = node(),
 	[send({Name, N}, {checklead, Node}) || N <- Down],
-	erlang:send_after(Time, GlProc, {send_checklead})
+    timer:sleep(Time),
+	send(GlProc, {send_checklead})
 	.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% AMQP messages
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 send(Pid, Msg) when is_atom(Pid); node() =:= erlang:node(Pid); node() =:= element(2, Pid) ->
-    lager:debug([{trace, true}], "~s local message ~p: ~p", [node(), Msg, Pid]),
+    lager:debug("local message ~p: ~p", [Msg, Pid]),
     Pid ! Msg;
 send({Name, Node}, Msg) ->
     Route = wapi_leader:route(Name, Node),
@@ -1646,15 +1691,13 @@ send(Pid, Msg) when is_pid(Pid) ->
     Route = wapi_leader:route(Pid),
     send(Route, Msg);
 send(Route, Msg) ->
-    lager:debug([{trace, true}], "~s amqp  message ~p: ~p", [node(), Msg, Route]),
+    lager:debug("amqp message ~p: ~p", [Msg, Route]),
     Props = [{<<"Message">>, wh_util:to_hex_binary(erlang:term_to_binary(Msg))}
              | wh_api:default_headers(<<"leader">>, <<"message">>, ?APP_NAME, ?APP_VERSION)
             ],
     try
         asd:asd()
-    catch
-        _:_ -> wh_util:log_stacktrace()
-    end,
+    catch _:_ -> wh_util:log_stacktrace() end,
     wapi_leader:publish_req(Route, Props).
 
 gen_call(Pid, Tag, Request) ->
