@@ -423,7 +423,7 @@ init_it(Starter,Parent,Name,Mod,{_UnsortedCandidateNodes,OptArgs,Arg},Options) -
     Workers     = proplists:get_value(workers,   OptArgs, []),
     VarDir      = proplists:get_value(vardir,    OptArgs, "."),
     Interval    = proplists:get_value(heartbeat, OptArgs, ?TAU div 1000) * 1000,
-    BcastType   = proplists:get_value(bcast_type,OptArgs, sender),
+    BcastType   = proplists:get_value(bcast_type,OptArgs, all),
     Debug       = debug_options(Name, Options),
     UnsortedCandidateNodes = get_nodes(Name),
     CandidateNodes = lists:sort(UnsortedCandidateNodes),
