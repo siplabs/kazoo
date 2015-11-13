@@ -168,8 +168,7 @@
           parent,
           mod,
           state,
-          monitor_proc = spawn_monitor_proc(),
-	  debug :: [sys:dbg_opt()]
+          debug :: [sys:dbg_opt()]
          }).
 
 %%% ---------------------------------------------------
@@ -522,12 +521,13 @@ init_it(Starter,Parent,Name,Mod,{_UnsortedCandidateNodes,OptArgs,Arg},Options) -
 
 init_ack_ok(Starter) ->
     proc_lib:init_ack(Starter, {ok, self()}),
-    true = amqp_leader_listener:is_ready(),
     wh_util:put_callid(wapi_leader:queue()),
+    true = amqp_leader_listener:is_ready(),
     ok.
 
 get_nodes(Name) ->
     send({Name, 'broadcast'}, {'nodes', {Name, node()}}),
+    do_monitor(self(), Name),
     erlang:send_after(3000, self(), 'stop'),
     recv_nodes([node()]).
 
@@ -1591,63 +1591,18 @@ mon_node(E,Proc,Server) when is_pid(Proc) ->
     end
     .
 
-spawn_monitor_proc() ->
-    Parent = self(),
-    CallId = wapi_leader:queue(),
-    proc_lib:spawn_link(
-      fun() ->
-              wh_util:put_callid(CallId),
-              mon_loop(Parent, [])
-      end).
-
-do_monitor(Proc, #server{monitor_proc = P}) ->
-    send(P, {self(), {monitor, Proc}}),
-    receive
-        {mon_reply, Reply} ->
-            Reply
-    after 10000 -> % can take quite a while to receive mon_reply if the node is down
-            erlang:error(timeout)
-    end.
-
-mon_loop(Parent, Refs) ->
-    receive
-        {From, Req} ->
-            mon_loop(Parent, mon_handle_req(Req, From, Refs));
-        {'DOWN', Ref, _, _, _} ->
-            mon_loop(Parent, mon_handle_down(Ref, Parent, Refs));
-        Msg ->
-            lager:debug("mon_loop with parent: ~p refs: ~p received: ~p~n", [Parent, Refs, Msg]),
-            mon_loop(Parent, Refs)
-    end.
-
-mon_handle_req({monitor, P}, From, Refs) ->
-    Node = case P of
-               {_Name, N}           -> N;
-               Pid when is_pid(Pid) -> node(Pid)
-           end,
-    case lists:keyfind(Node, 2, Refs) of
-        {Ref, _} ->
-            mon_reply(From, {Ref,Node}),
-            Refs;
-        false ->
-            Ref = erlang:monitor(process, P),
-            mon_reply(From, {Ref,Node}),
-            [{Ref,Node}|Refs]
-    end.
-
-mon_handle_down(Ref, _Parent, Refs) ->
-    case lists:keytake(Ref, 1, Refs) of
-        {value, {_, Node}, Refs1} ->
-            lager:notice("node ~p down", [Node]),
-%            send(Parent, {ldr, 'DOWN', Node}),
-            Refs1;
-        false ->
-            Refs
-    end.
-
-
-mon_reply(From, Reply) ->
-    send(From, {mon_reply, Reply}).
+do_monitor(Proc, _) ->
+    Node = node(Proc),
+    Ref = erlang:make_ref(),
+    case ets:match('wh_nodes', #wh_node{node = Node, expires = '$2', _ = '_'}) of
+        [] ->
+            lager:debug("node ~s is DOWN", [Node]),
+            self() ! {'ldr', 'DOWN', Node};
+        [_] ->
+            lager:debug("node ~s is UP", [Node]),
+            'ok'
+    end,
+    {Ref, Node}.
 
 %% the heartbeat messages sent to the downed nodes when the candicate_timer
 %% message is received can take a very long time in the case of a partitioned

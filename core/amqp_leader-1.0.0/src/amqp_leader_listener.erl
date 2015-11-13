@@ -22,7 +22,7 @@
 
 -include("amqp_leader.hrl").
 
--record(state, {self = self(), name, ready = false, pending = []}).
+-record(state, {self = self(), name, pending = [], is_connected = 'false', is_up = 'false'}).
 
 %% By convention, we put the options here in macros, but not required.
 -define(BINDINGS(Name), [{'leader', [{'name', Name}]}
@@ -77,7 +77,14 @@ start_link(Name) ->
 %%--------------------------------------------------------------------
 init([Name]) ->
     wh_util:put_callid(wapi_leader:queue(Name, node())),
-    {'ok', #state{self = self(), name = Name}}.
+    wh_nodes:notify_expire(),
+    case ets:match(wh_nodes, #wh_node{node = node(), expires = '$2', _ = '_'}) of
+        [] ->
+            wh_nodes:notify_new(),
+            {'ok', #state{self = self(), name = Name}};
+        [_] ->
+            {'ok', #state{self = self(), name = Name, is_up = 'true'}}
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -93,11 +100,9 @@ init([Name]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call('is_ready', From, #state{ready = 'false', pending = Pids} = State) ->
-    {'noreply', State#state{pending = [From | Pids]}};
-handle_call('is_ready', From, State) ->
-    gen_server:reply(From, 'true'),
-    {'noreply', State};
+handle_call('is_ready', From, #state{pending = Pids} = State) ->
+    NewState = maybe_ready(State#state{pending = [From | Pids]}),
+    {'noreply', NewState};
 handle_call(_Request, _From, State) ->
     lager:warning("unhandled call ~p", [_Request]),
     {'reply', {'error', 'not_implemented'}, State}.
@@ -112,12 +117,17 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({'gen_listener', {'created_queue', _QueueNAme}}, #state{pending = Pids} = State) ->
-    NewState = State#state{ready = true},
-    lists:foldl(fun(F, S) -> handle_call('is_ready', F, S), S end
-                ,NewState
-                ,Pids),
+handle_cast({'wh_nodes', {'expire', #wh_node{node = Node}}}, #state{name = Name} = State) ->
+    Name ! {ldr, 'DOWN', Node},
+    {'noreply', State};
+handle_cast({'wh_nodes', {'new', #wh_node{node = Node}}}, State) when Node =:= node() ->
+    NewState = maybe_ready(State#state{is_up = 'true'}),
     {'noreply', NewState};
+handle_cast({'wh_nodes', {'new', _Node}}, State) ->
+    {'noreply', State};
+handle_cast({'gen_listener', {'created_queue', _QueueNAme}}, State) ->
+    NewState = maybe_ready(State#state{is_connected = 'true'}),
+    {'noreply', NewState#state{pending = []}};
 handle_cast({'gen_listener', {'is_consuming', _IsConsuming}}, State) ->
     {'noreply', State};
 handle_cast(_Msg, State) ->
@@ -187,3 +197,15 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+maybe_ready(#state{pending = Pids
+                   ,is_up = 'true'
+                   ,is_connected = 'true'
+                  } = State) ->
+    [gen_server:reply(Pid, 'true') || Pid <- Pids],
+    State#state{pending = []};
+maybe_ready(State) ->
+    case State#state.is_up of
+        'true' -> lager:debug("not connected");
+        'false' -> lager:debug("node is down")
+    end,
+    State.
