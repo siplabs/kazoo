@@ -41,7 +41,7 @@ is_ready() ->
     lager:debug("sup ~p", [Sup]),
     Pid = element(2, hd([X || X <- supervisor:which_children(Sup), element(1, X) =:= ?MODULE])),
     lager:debug("pid ~p", [Pid]),
-    gen_listener:call(Pid, 'is_ready').
+    gen_listener:call(Pid, 'is_ready', 15000).
 
 %%--------------------------------------------------------------------
 %% @doc
