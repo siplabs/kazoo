@@ -118,7 +118,7 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast({'wh_nodes', {'expire', #wh_node{node = Node}}}, #state{name = Name} = State) ->
-    Name ! {ldr, 'DOWN', Node},
+    Name ! {'DOWN', Node},
     {'noreply', State};
 handle_cast({'wh_nodes', {'new', #wh_node{node = Node}}}, State) when Node =:= node() ->
     NewState = maybe_ready(State#state{is_up = 'true'}),
