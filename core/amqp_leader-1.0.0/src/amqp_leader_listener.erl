@@ -41,7 +41,7 @@ is_ready() ->
     lager:debug("sup ~p", [Sup]),
     Pid = element(2, hd([X || X <- supervisor:which_children(Sup), element(1, X) =:= ?MODULE])),
     lager:debug("pid ~p", [Pid]),
-    gen_listener:call(Pid, 'is_ready', 15000).
+    gen_listener:call(Pid, 'is_ready', 25 * ?MILLISECONDS_IN_SECOND).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -121,11 +121,13 @@ handle_cast({'wh_nodes', {'expire', #wh_node{node = Node}}}, #state{name = Name}
     Name ! {'DOWN', Node},
     {'noreply', State};
 handle_cast({'wh_nodes', {'new', #wh_node{node = Node}}}, State) when Node =:= node() ->
+    lager:debug("node is up"),
     NewState = maybe_ready(State#state{is_up = 'true'}),
     {'noreply', NewState};
 handle_cast({'wh_nodes', {'new', _Node}}, State) ->
     {'noreply', State};
 handle_cast({'gen_listener', {'created_queue', _QueueNAme}}, State) ->
+    lager:debug("connected"),
     NewState = maybe_ready(State#state{is_connected = 'true'}),
     {'noreply', NewState#state{pending = []}};
 handle_cast({'gen_listener', {'is_consuming', _IsConsuming}}, State) ->
