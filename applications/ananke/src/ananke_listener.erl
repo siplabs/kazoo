@@ -77,7 +77,7 @@ init([]) ->
     %% we should wait about 7-10 seconds before gen_leader syncronization
     %% and leader election
     %% after gen_leader syncronization this task will be scheduled only once
-    leader_cron:schedule_task('load_schedules', {'oneshot', 60000}
+    leader_cron:schedule_task('load_schedules', {'oneshot', 10}
                              ,{'gen_listener', 'cast', [?MODULE, 'load_schedules']}),
     {'ok', #state{}}.
 
