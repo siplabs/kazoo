@@ -7,6 +7,9 @@
 %% API functions
 -export([start_link/6
          ,leader_call/2
+         ,call/2
+         ,alive/1
+         ,broadcast/3
         ]).
 -export([s/1]).
 
@@ -61,8 +64,17 @@
 start_link(Name, CandidateNodes, OptArgs, Mod, Arg, Options) ->
     gen_server:start_link({'local', Name}, ?MODULE, [self(), Name, CandidateNodes, OptArgs, Mod, Arg, Options], []).
 
-leader_call(Name, {'leader_call', Msg}) ->
-    gen_server:call(Name, Msg).
+leader_call(Name, Request) ->
+    gen_server:call(Name, {'leader_call', Request}, 20000).
+
+alive(#sign{node = LeaderNode}) ->
+    lists:usort([LeaderNode, node()]).
+
+call(Name, Request) ->
+    gen_server:call(Name, Request, 20000).
+
+broadcast(Msg, _Nodes, #sign{name = Name}) ->
+    send({Name, 'broadcast'}, Msg).
 
 s(Name) ->
     gen_server:call(Name, s).
@@ -141,7 +153,7 @@ ok(State, [{Fun, Data} | Rest]) ->
 handle_call(s, _, State) ->
     {reply, State, State};
 handle_call({'leader_call', Msg}, From, State) when ?is_leader ->
-    Routines = [{fun call_leader/2, {From, Msg}}
+    Routines = [{fun call_handle_leader_call/2, {From, Msg}}
                ],
     noreply(State, Routines);
 handle_call({'leader_call', Msg}, From, #state{name = Name} = State) ->
@@ -217,8 +229,8 @@ handle_info(#?MODULE{from = From, msg = Msg}, State) when ?from_leader ->
                ],
     noreply(State, Routines);
 
-handle_info({'leader_call', Request}, State) when ?is_leader ->
-    Routines = [{fun call_leader/2, Request}
+handle_info({'leader_call', From, Request}, State) when ?is_leader ->
+    Routines = [{fun call_handle_leader_call/2, {From, Request}}
                ],
     noreply(State, Routines);
 
@@ -300,21 +312,21 @@ call_elected(#state{callback_module = Mod, leader = Leader} = State, Node) when 
     {_Action, Sync, ModState} = Mod:elected(callback_state(State), leader(State), Node),
     set_callback_state(State#state{leader = Leader#sign{sync = Sync}}, ModState).
 
-call_leader(#state{callback_module = Mod, name = Name} = State, {From, Msg}) when ?is_leader ->
+call_handle_leader_call(#state{callback_module = Mod} = State, {From, Msg}) when ?is_leader ->
     case Mod:handle_leader_call(Msg, From, callback_state(State), leader(State)) of
         {'reply', Reply, Broadcast, NewModState} ->
             reply(From, Reply),
-            send({Name, 'broadcast'}, #?MODULE{from = leader(State), msg = Broadcast}),
+            send({name(State), 'broadcast'}, #?MODULE{from = leader(State), msg = Broadcast}),
             {set_callback_state(State, NewModState), [{fun announce_leader/2, {'broadcast', 'me'}}]};
         {'reply', Reply, NewModState} ->
             reply(From, Reply),
             set_callback_state(State, NewModState);
+        {'stop', Reason, Reply, NewModState} ->
+            reply(From, Reply),
+            {set_callback_state(State, NewModState), {'stop', Reason}};
         {'noreply', NewModState} ->
             set_callback_state(State, NewModState);
         {'stop', Reason, NewModState} ->
-            {set_callback_state(State, NewModState), {'stop', Reason}};
-        {'stop', Reason, Reply, NewModState} ->
-            reply(From, Reply),
             {set_callback_state(State, NewModState), {'stop', Reason}}
     end.
 
@@ -327,6 +339,8 @@ call_from_leader(#state{callback_module = Mod} = State, Sync) ->
         {'stop', Reason, NewModState} ->
             {set_callback_state(State, NewModState), {'stop', Reason}}
     end.
+
+%handle_callback_return({'ok'
 
 noreply(#state{} = State, []) ->
     {'noreply', State};
@@ -351,6 +365,9 @@ set_leader(State, 'me') -> set_leader(State, sign(State));
 set_leader(State, Leader) -> State#state{leader = Leader}.
 
 leader(#state{leader = Leader}) -> Leader.
+
+name(#state{name = Name}) -> Name;
+name(#sign{name = Name}) -> Name.
 
 set_callback_state(#state{} = State, CallbackState) -> State#state{callback_state = CallbackState}.
 
@@ -394,24 +411,6 @@ reply({Pid, _} = From, Reply) when is_pid(Pid) andalso erlang:node(Pid) =:= node
     gen_server:reply(From, Reply);
 reply({From, Tag}, Reply) ->
     send(From, {Tag, Reply}).
-
-%gen_call(Pid, Tag, Request) ->
-%    gen_call(Pid, Tag, Request, 5 * 1000).
-
-%gen_call(Pid, Tag, Request, Timeout) ->
-%    Ref = erlang:make_ref(),
-%    From = wapi_leader:whoami(),
-%    send(Pid, {Tag, {From, Ref}, Request}),
-%    receive
-%        {Ref, Reply} -> {ok, Reply}
-%    after Timeout ->
-%              exit(timeout)
-%    end.
-
-%rpc_multicall(_Nodes, ?MODULE, worker_announce, [Name, _Pid]) ->
-%    Broadcast = wapi_leader:route(Name, "broadcast"),
-%    send(Broadcast, {add_worker, node()}),
-%    send(Broadcast, {heartbeat, node()}).
 
 node({_, Node}) -> Node;
 node(#sign{node = Node}) -> Node;
