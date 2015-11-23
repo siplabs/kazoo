@@ -415,10 +415,8 @@ handle_cast({'advertise', JObj}, #state{tab=Tab}=State) ->
 handle_cast({'gen_listener', {'is_consuming', 'true'}}
             ,#state{heartbeat_ref='undefined'}=State
            ) ->
-    Reference = erlang:make_ref(),
-    erlang:send_after(?HEARTBEAT, self(), {'heartbeat', Reference}),
     lager:debug("start heartbeat"),
-    {'noreply', State#state{heartbeat_ref=Reference, is_consuming='true'}};
+    handle_info({'heartbeat', 'undefined'}, State#state{is_consuming='true'});
 handle_cast({'gen_listener', {'is_consuming', IsConsuming}}, State) ->
     lager:debug("heartbeat is ~p", [IsConsuming]),
     {'noreply', State#state{is_consuming=IsConsuming}};
