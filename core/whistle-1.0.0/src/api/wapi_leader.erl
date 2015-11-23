@@ -63,7 +63,7 @@ route(Name, Node) ->
 req(Prop) when is_list(Prop) ->
     case req_v(Prop) of
         'true' -> wh_api:build_message(Prop, ?LEADER_REQ_HEADERS, ?OPTIONAL_LEADER_REQ_HEADERS);
-        'false' -> {'error', "Proplist failed validation for fs_req"}
+        'false' -> {'error', "Proplist failed validation for leader_req"}
     end;
 req(JObj) ->
     req(wh_json:to_proplist(JObj)).
