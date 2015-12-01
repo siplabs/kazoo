@@ -29,6 +29,7 @@
                 ,callback_module
                 ,callback_state
                 ,down = []
+                ,candidates = [node()]
                }).
 
 -record(sign, {elected
@@ -36,6 +37,7 @@
                ,node = node()
                ,name
                ,sync
+               ,candidates
               }).
 
 -record(?MODULE, {from, msg}).
@@ -67,8 +69,8 @@ start_link(Name, CandidateNodes, OptArgs, Mod, Arg, Options) ->
 leader_call(Name, Request) ->
     gen_server:call(Name, {'leader_call', Request}, 20000).
 
-alive(#sign{node = LeaderNode}) ->
-    lists:usort([LeaderNode, node()]).
+alive(#sign{candidates = Candidates}) ->
+    Candidates.
 
 call(Name, Request) ->
     gen_server:call(Name, Request, 20000).
@@ -113,6 +115,7 @@ init([Starter, Name, _CandidateNodes, _OptArgs, Mod, Arg, _Options]) ->
                                 ,{fun set_role/2, 'candidate'}
                                 ,{fun call_surrendered/2, Leader}
                                 ,{fun announce_leader/2, {Leader, 'me'}}
+                                ,{fun add_candidates/2, Leader}
                                ],
                     ok(State, Routines)
             after
@@ -189,6 +192,13 @@ handle_info(#?MODULE{from = From, msg = 'join'} = Msg, State) when ?is_leader ->
     lager:debug("message ~p", [Msg]),
     Routines = [{fun call_elected/2, From}
                 ,{fun announce_leader/2, {From, 'me'}}
+                ,{fun add_candidates/2, From}
+               ],
+    noreply(State, Routines);
+
+handle_info(#?MODULE{from = From, msg = 'join'} = Msg, State) ->
+    lager:debug("message ~p", [Msg]),
+    Routines = [{fun add_candidates/2, From}
                ],
     noreply(State, Routines);
 
@@ -359,6 +369,9 @@ noreply(#state{} = State, [{Fun, Data} | Rest]) ->
 increase_elected(#state{elected = Elected} = State, []) ->
     State#state{elected = Elected + 1}.
 
+add_candidates(#state{candidates = MyCandidates} = State, #sign{candidates = Candidates}) ->
+    State#state{candidates = lists:usort(MyCandidates ++ Candidates)}.
+
 set_role(State, Role) -> State#state{role = Role}.
 
 set_leader(State, 'me') -> set_leader(State, sign(State));
@@ -412,9 +425,14 @@ reply({Pid, _} = From, Reply) when is_pid(Pid) andalso erlang:node(Pid) =:= node
 reply({From, Tag}, Reply) ->
     send(From, {Tag, Reply}).
 
-node({_, Node}) -> Node;
-node(#sign{node = Node}) -> Node;
-node(Pid) -> erlang:node(Pid).
+node({Name, Node}) when is_atom(Node), is_atom(Name) -> Node;
+node(#sign{node = Node}) when is_atom(Node) -> Node;
+node(Pid) when is_pid(Pid) -> erlang:node(Pid).
 
-sign(#state{elected = Elected, restarted = Restarted, name = Name} = State) ->
-    #sign{elected = Elected, restarted = -Restarted, name = Name, sync = leader_sync(State)}.
+sign(#state{elected = Elected, restarted = Restarted, name = Name, candidates = Candidates} = State) ->
+    #sign{elected = Elected
+          ,restarted = -Restarted
+          ,name = Name
+          ,sync = leader_sync(State)
+          ,candidates = Candidates
+         }.
