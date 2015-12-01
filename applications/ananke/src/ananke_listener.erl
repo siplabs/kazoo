@@ -79,6 +79,7 @@ init([]) ->
     %% after gen_leader syncronization this task will be scheduled only once
     leader_cron:schedule_task('load_schedules', {'oneshot', 10}
                              ,{'gen_listener', 'cast', [?MODULE, 'load_schedules']}),
+    leader_cron:schedule_task('nomad', {'sleeper', 5000}, {'io', 'format', ["nomad from desert~n"]}),
     {'ok', #state{}}.
 
 %%--------------------------------------------------------------------
