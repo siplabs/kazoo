@@ -19,6 +19,10 @@ Edit system_config db's cccp doc:
     "allowed_callee_regex": "^\\+?\\d{7,}$",
     "callflow_number": "cccp_handler" - callflow number to lookup within account
     "platform_collect_timeout": {{timeout}}
+    "platform_interdigit_timeout": 5000 - timeout between digits
+    "platform_long_pin_length": 10 - long PIN length. After collecting the 'platform_long_pin_length' numbers the processing will be started immediately without any timeout. Set it to 0 (zero) if no long PIN should be.
+    "platform_short_pin_length": 4 - short PIN length. After collecting the 'platform_short_pin_length' numbers the processing will be started after the 'platform_short_pin_timeout' timeout. Set it to 0 (zero) if no short PIN should be.
+    "platform_short_pin_timeout": 2000 - timeout executed after collecting the short PIN
 ```
 
 Add PIN auth:

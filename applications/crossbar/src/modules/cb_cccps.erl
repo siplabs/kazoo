@@ -13,7 +13,6 @@
          ,resource_exists/0, resource_exists/1
          ,validate/1, validate/2
          ,put/1
-         ,post/2
          ,delete/2
          ,delete_orphaned_cccps/1
         ]).
@@ -39,7 +38,7 @@ init() ->
     _ = crossbar_bindings:bind(<<"*.resource_exists.cccps">>, ?MODULE, 'resource_exists'),
     _ = crossbar_bindings:bind(<<"*.validate.cccps">>, ?MODULE, 'validate'),
     _ = crossbar_bindings:bind(<<"*.execute.put.cccps">>, ?MODULE, 'put'),
-    _ = crossbar_bindings:bind(<<"*.execute.post.cccps">>, ?MODULE, 'post'),
+    _ = crossbar_bindings:bind(<<"*.execute.post.cccps">>, ?MODULE, 'put'),
     _ = crossbar_bindings:bind(<<"*.execute.delete.cccps">>, ?MODULE, 'delete'),
     _ = crossbar_bindings:bind(<<"account.deleted">>, ?MODULE, 'delete_orphaned_cccps').
 
@@ -146,19 +145,6 @@ get_auth_pin(Context) ->
 %%--------------------------------------------------------------------
 -spec put(cb_context:context()) -> cb_context:context().
 put(Context) ->
-    Context2 = crossbar_doc:save(Context),
-    couch_mgr:ensure_saved(?KZ_CCCPS_DB, cb_context:doc(Context2)),
-    Context2.
-
-%%--------------------------------------------------------------------
-%% @public
-%% @doc
-%% If the HTTP verb is POST, execute the actual action, usually a db save
-%% (after a merge perhaps).
-%% @end
-%%--------------------------------------------------------------------
--spec post(cb_context:context(), path_token()) -> cb_context:context().
-post(Context, _) ->
     Context2 = crossbar_doc:save(Context),
     couch_mgr:ensure_saved(?KZ_CCCPS_DB, cb_context:doc(Context2)),
     Context2.

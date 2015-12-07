@@ -136,6 +136,8 @@
 -export([b_prompt_and_collect_digits/4, b_prompt_and_collect_digits/5
          ,b_prompt_and_collect_digits/6, b_prompt_and_collect_digits/7
          ,b_prompt_and_collect_digits/8, b_prompt_and_collect_digits/9
+         ,b_prompt_and_collect_digits/10, b_prompt_and_collect_digits/11
+         ,b_prompt_and_collect_digits/12
         ]).
 -export([b_play_and_collect_digit/2]).
 -export([b_play_and_collect_digits/4, b_play_and_collect_digits/5
@@ -209,6 +211,9 @@
 -define(DEFAULT_COLLECT_TIMEOUT, whapps_config:get_integer(?CONFIG_CAT, <<"collect_timeout">>, 5 * ?MILLISECONDS_IN_SECOND)).
 -define(DEFAULT_DIGIT_TIMEOUT, whapps_config:get_integer(?CONFIG_CAT, <<"digit_timeout">>, 3 * ?MILLISECONDS_IN_SECOND)).
 -define(DEFAULT_INTERDIGIT_TIMEOUT, whapps_config:get_integer(?CONFIG_CAT, <<"interdigit_timeout">>, 2 * ?MILLISECONDS_IN_SECOND)).
+-define(DEFAULT_LONGPIN_LENGTH, whapps_config:get_integer(?CONFIG_CAT, <<"long_pin_length">>, 10)).
+-define(DEFAULT_SHORTPIN_LENGTH, whapps_config:get_integer(?CONFIG_CAT, <<"short_pin_length">>, 4)).
+-define(DEFAULT_SHORTPIN_TIMEOUT, whapps_config:get_integer(?CONFIG_CAT, <<"short_pin_timeout">>, 5 * ?MILLISECONDS_IN_SECOND)).
 
 -define(DEFAULT_MESSAGE_TIMEOUT, whapps_config:get_integer(?CONFIG_CAT, <<"message_timeout">>, 5 * ?MILLISECONDS_IN_SECOND)).
 -define(DEFAULT_APPLICATION_TIMEOUT, whapps_config:get_integer(?CONFIG_CAT, <<"application_timeout">>, 500 * ?MILLISECONDS_IN_SECOND)).
@@ -1641,26 +1646,35 @@ b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Call) ->
     b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, ?DEFAULT_COLLECT_TIMEOUT, Call).
 b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, Call) ->
     b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, ?DEFAULT_INTERDIGIT_TIMEOUT, Call).
-
 b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, Call) ->
-    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, 'undefined', Call).
-b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, InvalidPrompt, Call) ->
-    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, InvalidPrompt, <<"\\d+">>, Call).
-b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, InvalidPrompt, Regex, Call) ->
-    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, InvalidPrompt, Regex, ?ANY_DIGIT, Call).
+    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, ?DEFAULT_LONGPIN_LENGTH, ?DEFAULT_SHORTPIN_LENGTH, ?DEFAULT_SHORTPIN_TIMEOUT, Call).
+b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, LongPinLength, Call) ->
+    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, LongPinLength, ?DEFAULT_SHORTPIN_LENGTH, ?DEFAULT_SHORTPIN_TIMEOUT, Call).
+b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, Call) ->
+    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ?DEFAULT_SHORTPIN_TIMEOUT, Call).
 
-b_prompt_and_collect_digits(_MinDigits, _MaxDigits, _Prompt, 0, _Timeout, _InterdigitTimeout, 'undefined', _Regex, _Terminators, _Call) ->
+b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, Call) ->
+    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, 'undefined', Call).
+b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, InvalidPrompt, Call) ->
+    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, InvalidPrompt, <<"\\d+">>, Call).
+b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, InvalidPrompt, Regex, Call) ->
+    b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, InvalidPrompt, Regex, ?ANY_DIGIT, Call).
+
+b_prompt_and_collect_digits(_MinDigits, _MaxDigits, _Prompt, 0, _Timeout, _InterdigitTimeout, _LongPinLength, _ShortPinLength, _ShortPinTimeout, 'undefined', _Regex, _Terminators, _Call) ->
     {'ok', <<>>};
-b_prompt_and_collect_digits(_MinDigits, _MaxDigits, _Prompt, 0, _Timeout, _InterdigitTimeout, InvalidPrompt, _Regex, _Terminators, Call) ->
+b_prompt_and_collect_digits(_MinDigits, _MaxDigits, _Prompt, 0, _Timeout, _InterdigitTimeout, _LongPinLength, _ShortPinLength, _ShortPinTimeout, InvalidPrompt, _Regex, _Terminators, Call) ->
     _ = b_prompt(InvalidPrompt, Call),
     {'ok', <<>>};
-b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, InvalidPrompt, Regex, Terminators, Call) ->
+b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, InvalidPrompt, Regex, Terminators, Call) ->
     b_play_and_collect_digits(MinDigits
                               ,MaxDigits
                               ,wh_media_util:get_prompt(Prompt, Call)
                               ,Tries
                               ,Timeout
                               ,InterdigitTimeout
+                              ,LongPinLength
+                              ,ShortPinLength
+                              ,ShortPinTimeout
                               ,InvalidPrompt
                               ,Regex
                               ,Terminators
@@ -1760,20 +1774,26 @@ b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Call) ->
 b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, Call) ->
     b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, ?DEFAULT_INTERDIGIT_TIMEOUT, Call).
 b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, Call) ->
-    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, 'undefined', Call).
-b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, MediaInvalid, Call) ->
-    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, MediaInvalid, <<"[\\d\\*\\#]+">>, Call).
-b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, MediaInvalid, Regex, Call) ->
-    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, MediaInvalid, Regex, ?ANY_DIGIT, Call).
+    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, ?DEFAULT_LONGPIN_LENGTH, Call).
+b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, LongPinLength, Call) ->
+    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, LongPinLength, ?DEFAULT_SHORTPIN_LENGTH, Call).
+b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, Call) ->
+    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ?DEFAULT_SHORTPIN_TIMEOUT, Call).
+b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, Call) ->
+    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, 'undefined', Call).
+b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, MediaInvalid, Call) ->
+    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, MediaInvalid, <<"[\\d\\*\\#]+">>, Call).
+b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, MediaInvalid, Regex, Call) ->
+    b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, MediaInvalid, Regex, ?ANY_DIGIT, Call).
 
-b_play_and_collect_digits(_MinDigits, _MaxDigits, _Media, 0, _Timeout, _InterdigitTimeout, 'undefined', _Regex, _Terminators, _Call) ->
+b_play_and_collect_digits(_MinDigits, _MaxDigits, _Media, 0, _Timeout, _InterdigitTimeout, _LongPinLength, _ShortPinLength, _ShortPinTimeout, 'undefined', _Regex, _Terminators, _Call) ->
     {'ok', <<>>};
-b_play_and_collect_digits(_MinDigits, _MaxDigits, _Media, 0, _Timeout, _InterdigitTimeout, MediaInvalid, _Regex, _Terminators, Call) ->
+b_play_and_collect_digits(_MinDigits, _MaxDigits, _Media, 0, _Timeout, _InterdigitTimeout, _LongPinLength, _ShortPinLength, _ShortPinTimeout, MediaInvalid, _Regex, _Terminators, Call) ->
     _ = b_play(MediaInvalid, Call),
     {'ok', <<>>};
-b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, MediaInvalid, Regex, Terminators, Call) ->
+b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, MediaInvalid, Regex, Terminators, Call) ->
     NoopId = play(Media, Terminators, Call),
-    case collect_digits(MaxDigits, Timeout, InterdigitTimeout, NoopId, Call) of
+    case collect_digits(MaxDigits, Timeout, InterdigitTimeout, LongPinLength, ShortPinLength, ShortPinTimeout, NoopId, Call) of
         {'ok', Digits} ->
             case re:run(Digits, Regex) of
                 {'match', _} when byte_size(Digits) >= MinDigits ->
@@ -1782,6 +1802,7 @@ b_play_and_collect_digits(MinDigits, MaxDigits, Media, Tries, Timeout, Interdigi
                     b_play_and_collect_digits(MinDigits, MaxDigits
                                               ,Media, Tries - 1
                                               ,Timeout, InterdigitTimeout
+                                              ,LongPinLength, ShortPinLength, ShortPinTimeout
                                               ,MediaInvalid
                                               ,Regex, Terminators
                                               ,Call
@@ -2044,6 +2065,9 @@ b_privacy(Mode, Call) ->
                              ,call :: whapps_call:call()
                              ,digits_collected = <<>> :: binary()
                              ,after_timeout = ?MILLISECONDS_IN_DAY :: pos_integer()
+                             ,long_pin_length = ?DEFAULT_LONGPIN_LENGTH :: pos_integer()
+                             ,short_pin_length = ?DEFAULT_SHORTPIN_LENGTH :: pos_integer()
+                             ,short_pin_timeout = ?DEFAULT_SHORTPIN_TIMEOUT :: pos_integer()
                             }).
 -type wcc_collect_digits() :: #wcc_collect_digits{}.
 
@@ -2073,6 +2097,17 @@ collect_digits(MaxDigits, Timeout, Interdigit, NoopId, Call) ->
                                           ,call=Call
                                          }).
 
+collect_digits(MaxDigits, Timeout, Interdigit, LongPinLength, ShortPinLength, ShortPinTimeout, NoopId, Call) ->
+    do_collect_digits(#wcc_collect_digits{max_digits=wh_util:to_integer(MaxDigits)
+        ,timeout=wh_util:to_integer(Timeout)
+        ,interdigit=wh_util:to_integer(Interdigit)
+        ,long_pin_length=LongPinLength
+        ,short_pin_length=ShortPinLength
+        ,short_pin_timeout=ShortPinTimeout
+        ,noop_id=NoopId
+        ,call=Call
+    }).
+
 collect_digits(MaxDigits, Timeout, Interdigit, NoopId, Terminators, Call) ->
     do_collect_digits(#wcc_collect_digits{max_digits=wh_util:to_integer(MaxDigits)
                                           ,timeout=wh_util:to_integer(Timeout)
@@ -2086,6 +2121,9 @@ collect_digits(MaxDigits, Timeout, Interdigit, NoopId, Terminators, Call) ->
 do_collect_digits(#wcc_collect_digits{max_digits=MaxDigits
                                       ,timeout=Timeout
                                       ,interdigit=Interdigit
+                                      ,long_pin_length=LongPinLength
+                                      ,short_pin_length=ShortPinLength
+                                      ,short_pin_timeout=ShortPinTimeout
                                       ,noop_id=NoopId
                                       ,terminators=Terminators
                                       ,call=Call
@@ -2117,6 +2155,14 @@ do_collect_digits(#wcc_collect_digits{max_digits=MaxDigits
                             {'ok', Digits};
                         'false' ->
                             case <<Digits/binary, Digit/binary>> of
+                                D when byte_size(D) =:= ShortPinLength andalso ShortPinLength =/= 0 ->
+                                    lager:debug("short pin size reached ('~s') from caller. Short pin timeout used as interdigit timeout", [D]),
+                                    do_collect_digits(Collect#wcc_collect_digits{digits_collected=D
+                                        ,after_timeout=ShortPinTimeout
+                                    });
+                                D when byte_size(D) =:= LongPinLength  andalso LongPinLength =/= 0 ->
+                                    lager:debug("long pin size reached ('~s') from caller", [D]),
+                                    {'ok', D};
                                 D when byte_size(D) < MaxDigits ->
                                     do_collect_digits(Collect#wcc_collect_digits{digits_collected=D
                                                                                  ,after_timeout=Interdigit
