@@ -11,6 +11,7 @@
 
 -export([set/3, set/4
          ,export/3, bridge_export/3
+         ,oreka_record/2
          ,record_call/3
         ]).
 
@@ -45,6 +46,12 @@ export(Node, UUID, [{K,V}|Exports]) ->
                                     ,{"execute-app-arg", wh_util:to_list(Export)}
                                    ]),
     export(Node, UUID, Exports).
+
+-spec oreka_record(atom(), ne_binary()) -> ecallmgr_util:send_cmd_ret().
+oreka_record(Node, UUID) ->
+    freeswitch:sendmsg(Node, UUID, [{"call-command", "execute"}
+                                    ,{"execute-app-name", "oreka_record"}
+                                   ]).
 
 -spec bridge_export(atom(), ne_binary(), wh_proplist()) -> ecallmgr_util:send_cmd_ret().
 bridge_export(_, _, []) -> 'ok';

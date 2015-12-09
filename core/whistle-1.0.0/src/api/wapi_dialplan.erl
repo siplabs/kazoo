@@ -34,6 +34,7 @@
          ,tts/1, tts_v/1
          ,record/1, record_v/1
          ,record_call/1, record_call_v/1
+         ,oreka_record/1, oreka_record_v/1
          ,answer/1, answer_v/1
          ,echo/1, echo_v/1
          ,privacy/1, privacy_v/1
@@ -475,6 +476,24 @@ record_call(JObj) -> record_call(wh_json:to_proplist(JObj)).
 record_call_v(Prop) when is_list(Prop) ->
     wh_api:validate(Prop, ?RECORD_CALL_REQ_HEADERS, ?RECORD_CALL_REQ_VALUES, ?RECORD_CALL_REQ_TYPES);
 record_call_v(JObj) -> record_call_v(wh_json:to_proplist(JObj)).
+
+%%--------------------------------------------------------------------
+%% @doc Oreka recording media - see wiki
+%% Takes proplist, creates JSON string or error
+%% @end
+%%--------------------------------------------------------------------
+-spec oreka_record(api_terms()) -> api_formatter_return().
+oreka_record(Prop) when is_list(Prop) ->
+    case oreka_record_v(Prop) of
+        'true' -> wh_api:build_message(Prop, ?OREKA_RECORD_REQ_HEADERS, ?OPTIONAL_OREKA_RECORD_REQ_HEADERS);
+        'false' -> {'error', "Proplist failed validation for record_call_req"}
+    end;
+oreka_record(JObj) -> oreka_record(wh_json:to_proplist(JObj)).
+
+-spec oreka_record_v(api_terms()) -> boolean().
+oreka_record_v(Prop) when is_list(Prop) ->
+    wh_api:validate(Prop, ?OREKA_RECORD_REQ_HEADERS, ?OREKA_RECORD_REQ_VALUES, ?OREKA_RECORD_REQ_TYPES);
+oreka_record_v(JObj) -> oreka_record_v(wh_json:to_proplist(JObj)).
 
 %%--------------------------------------------------------------------
 %% @doc Answer a session - see wiki

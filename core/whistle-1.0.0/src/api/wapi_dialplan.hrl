@@ -500,6 +500,16 @@
                                 ]).
 -define(RECORD_CALL_REQ_TYPES, [{<<"Record-Sample-Rate">>, fun is_integer/1}]).
 
+-define(OREKA_RECORD_REQ_HEADERS, [<<"Application-Name">>
+                                   ,<<"Call-ID">>
+                                  ]).
+-define(OPTIONAL_OREKA_RECORD_REQ_HEADERS, []).
+-define(OREKA_RECORD_REQ_VALUES, [{<<"Event-Category">>, <<"call">>}
+                                  ,{<<"Event-Name">>, <<"command">>}
+                                  ,{<<"Application-Name">>, <<"oreka_record">>}
+                                  ]).
+-define(OREKA_RECORD_REQ_TYPES, []).
+
 %% Play and Record Digits
 -define(PLAY_COLLECT_DIGITS_REQ_HEADERS
         ,[<<"Application-Name">>, <<"Call-ID">>, <<"Minimum-Digits">>

@@ -81,6 +81,9 @@
          ,start_record_call/2, start_record_call/3, start_record_call/4
          ,stop_record_call/2
         ]).
+
+-export([oreka_record/1]).
+
 -export([store/3, store/4, store/5, store/6
          ,store_fax/2, store_fax/3
         ]).
@@ -1397,6 +1400,14 @@ record_call(Media, Action, TimeLimit, Terminators, Call) ->
                  ,{<<"Record-Min-Sec">>, RecordMinSec}
                 ]),
 
+    send_command(Command, Call).
+
+-spec oreka_record(whapps_call:call()) -> 'ok'.
+oreka_record(Call) ->
+    Command = props:filter_undefined(
+                [{<<"Application-Name">>, <<"oreka_record">>}
+                 ,{<<"Instert-At">>, <<"now">>}
+                ]),
     send_command(Command, Call).
 
 -spec b_record_call(wh_proplist(), whapps_call:call()) ->

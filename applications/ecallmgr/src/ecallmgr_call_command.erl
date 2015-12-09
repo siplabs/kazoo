@@ -163,6 +163,13 @@ get_fs_app(Node, UUID, JObj, <<"record_call">>) ->
             record_call(Node, UUID, JObj)
     end;
 
+get_fs_app(Node, UUID, JObj, <<"oreka_record">>) ->
+    case wapi_dialplan:oreka_record_v(JObj) of
+        'false' -> {'error', <<"oreka_record failed to execute as JObj did not validate">>};
+        'true' ->
+            oreka_record(Node, UUID, JObj)
+    end;
+
 get_fs_app(Node, UUID, JObj, <<"store">>) ->
     case wapi_dialplan:store_v(JObj) of
         'false' -> {'error', <<"store failed to execute as JObj did not validate">>};
@@ -1373,6 +1380,11 @@ set_record_call_vars(Node, UUID, JObj) ->
                        ,Routines
                       ),
     ecallmgr_util:set(Node, UUID, Vars).
+
+-spec oreka_record(atom(), ne_binary(), wh_json:object()) -> fs_app().
+oreka_record(Node, UUID, _JObj) ->
+    ecallmgr_fs_command:oreka_record(Node, UUID),
+    {<<"oreka_record">>, 'noop'}.
 
 -spec maybe_waste_resources(wh_proplist()) -> wh_proplist().
 maybe_waste_resources(Acc) ->
