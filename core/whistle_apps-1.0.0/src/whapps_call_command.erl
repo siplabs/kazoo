@@ -82,7 +82,7 @@
          ,stop_record_call/2
         ]).
 
--export([oreka_record/1]).
+-export([oreka_record/2]).
 
 -export([store/3, store/4, store/5, store/6
          ,store_fax/2, store_fax/3
@@ -1402,13 +1402,21 @@ record_call(Media, Action, TimeLimit, Terminators, Call) ->
 
     send_command(Command, Call).
 
--spec oreka_record(whapps_call:call()) -> 'ok'.
-oreka_record(Call) ->
+-spec oreka_record(whapps_call:call(), wh_json:object()) -> 'ok'.
+oreka_record(Call, Headers) ->
     Command = props:filter_undefined(
                 [{<<"Application-Name">>, <<"oreka_record">>}
                  ,{<<"Instert-At">>, <<"now">>}
                 ]),
+    set(oreka_format_headers(Headers), 'undefined', Call),
     send_command(Command, Call).
+
+-spec oreka_format_headers(wh_json:object()) -> wh_json:object().
+oreka_format_headers(Headers) ->
+    wh_json:foldl(fun(Key, Value, Acc) -> wh_json:set_value(<<"oreka_", Key/binary>>, Value, Acc) end
+                  ,wh_json:new()
+                  ,Headers
+                 ).
 
 -spec b_record_call(wh_proplist(), whapps_call:call()) ->
                            wait_for_headless_application_return().

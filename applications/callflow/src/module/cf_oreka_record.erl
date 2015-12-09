@@ -4,6 +4,7 @@
 %%%
 %%% @end
 %%% @contributors
+%%%     SIPLABS, LLC (Ilya Ashchepkov)
 %%%-------------------------------------------------------------------
 -module(cf_oreka_record).
 
@@ -18,8 +19,10 @@
 %% @end
 %%--------------------------------------------------------------------
 -spec handle(wh_json:object(), whapps_call:call()) -> 'ok'.
-handle(_Data, Call) ->
+handle(Data, Call) ->
     lager:debug("sending command"),
-    whapps_call_command:oreka_record(Call),
+    MuxStreams = wh_util:to_binary(wh_json:get_value(<<"mux_streams">>, Data, 'true')),
+    Headers = wh_json:get_value(<<"headers">>, Data, wh_json:new()),
+    whapps_call_command:oreka_record(Call, wh_json:set_value(<<"mux_streams">>, MuxStreams, Headers)),
     %% Give control back to cf_exe process
     cf_exe:continue(Call).
