@@ -1,0 +1,21 @@
+{
+    "$schema": "http://json-schema.org/draft-03/schema#",
+    "_id": "callflows.collect_dtmf",
+    "description": "Validator for the Collect DTMF callflow element",
+    "properties": {
+        "headers": {
+            "description": "This headers will be sent over to the oreka server as well",
+            "name": "Oreka headers",
+            "required": false,
+            "type": "object"
+        },
+        "mux_streams": {
+            "description": "Mix the audio streams before sending to oreka",
+            "name": "Mux streams",
+            "required": false,
+            "type": "boolean"
+        }
+    },
+    "required": true,
+    "type": "object"
+}
