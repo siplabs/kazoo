@@ -200,6 +200,13 @@ status(Pid) ->
 -spec stop(pid()) -> ok.
 
 stop(Pid) ->
+    try
+        asd:asd()
+    catch
+        _:_ ->
+            io:format("stacktrace:~n~p~n", [erlang:get_stacktrace()])
+    end,
+    io:format("~p sending stop to ~p:~p~n", [self(), node(Pid), Pid]),
     gen_server:cast(Pid, stop).
 
 %%%===================================================================
@@ -261,6 +268,7 @@ handle_cast({waiting, NextValidDateTime}, State) ->
 handle_cast({running, NextValidDateTime}, State) ->
     {noreply, State#state{status = running, next = NextValidDateTime}};
 handle_cast(stop, State) ->
+    io:format("stopping ~p~n", [self()]),
     {stop, normal, State}.
 
 %%--------------------------------------------------------------------
@@ -282,6 +290,7 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 
 terminate(_Reason, State) ->
+    io:format("terminating ~p: ~p~n", [self(), _Reason]),
     exit(State#state.task_pid, kill),
     ok.
 

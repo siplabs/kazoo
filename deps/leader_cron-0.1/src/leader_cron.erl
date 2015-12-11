@@ -258,6 +258,7 @@ handle_leader_call({cancel, Pid}, _From, State, Election) ->
 			  false ->
 			      {{error, no_such_pid}, State};
 			  {_, Pid, _, _} ->
+                              io:format("cancel ~p", [Pid]),
 			      ok = leader_cron_task:stop(Pid),
 			      Tasks1 = lists:keydelete(Pid, 2, Tasks),
 			      send_tasks(Tasks1, Election),
@@ -350,6 +351,7 @@ code_change(_OldVsn, State, _Election, _Extra) ->
 %%%===================================================================
 
 save_tasks(State, Tasks) ->
+    io:format("save tasks ~p~n", [Tasks]),
     State#state{tasks = Tasks}.
 
 -spec send_tasks(Tasks, Election) -> ok when
@@ -357,6 +359,7 @@ save_tasks(State, Tasks) ->
       Election :: term().
 
 send_tasks(Tasks, Election) ->
+    io:format("send tasks ~p~n", [Tasks]),
     case amqp_leader_proc:alive(Election) -- [node()] of
 	[] ->
 	    ok;
@@ -370,17 +373,22 @@ send_tasks(Tasks, Election) ->
 -spec stop_tasks(State :: #state{}) -> #state{}.
 
 stop_tasks(State) ->
+    io:format("stop tasks~n", []),
     Tasks = State#state.tasks,
-    Tasks1 = lists:foldl(fun({Name, Pid, Schedule, Exec}, Acc) ->
-				 ok = leader_cron_task:stop(Pid),
-				 [{Name, undefined, Schedule, Exec}|Acc]
-			 end, [], Tasks),
+    Tasks1 = lists:foldl(
+               fun({Name, Pid, Schedule, Exec}, Acc) when node(Pid) == node() ->
+                       ok = leader_cron_task:stop(Pid),
+                       [{Name, undefined, Schedule, Exec}|Acc];
+                  (Task, Acc) ->
+                       [Task | Acc]
+               end, [], Tasks),
     State#state{tasks = Tasks1}.
 
 -spec start_tasks(#state{}) -> #state{}.
 
 start_tasks(State) ->
     TaskList = State#state.tasks,
+    io:format("start tasks ~p~n", [TaskList]),
     TaskList1 = lists:foldl(
 	     fun(Task, Acc) ->
                     {Name, _, Schedule, Exec} = Task,
@@ -401,6 +409,7 @@ remove_task_if_done(Task, Acc) ->
     {_, Pid, _, _} = Task,
     case leader_cron_task:status(Pid) of
 	{done, _, _} ->
+            io:format("remove if done ~p", [Pid]),
 	    ok = leader_cron_task:stop(Pid),
 	    Acc;
 	_ ->
