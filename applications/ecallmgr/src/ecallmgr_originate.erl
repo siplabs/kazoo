@@ -527,9 +527,14 @@ is_loopback(JObj) ->
 
 -spec normalized_endpoints_acc(wh_json:object(), wh_json:objects()) -> wh_json:objects().
 normalized_endpoints_acc(Endpoint, Acc) ->
-    {ok, CtrlPid} = ecallmgr_loopback_control:start_link(Endpoint),
+    LoopbackId = wh_util:rand_hex_binary(8),
+    {ok, CtrlPid} = ecallmgr_loopback_control:start_link(LoopbackId, Endpoint),
     {ok, ParsedEndpoints} = ecallmgr_loopback_control:get_endpoints(CtrlPid),
-    Acc ++ ParsedEndpoints.
+    Acc ++ [set_ccv(<<"Loopback-ID">>, LoopbackId, E) || E <- ParsedEndpoints].
+
+-spec set_ccv(ne_binary(), ne_binary(), wh_json:object()) -> wh_json:object().
+set_ccv(Var, Value, Endpoint) ->
+    wh_json:set_value([<<"Custom-Channel-Vars">>, Var], Value, Endpoint).
 
 -spec build_originate_args_from_endpoints(wh_json:objects(), wh_json:object(), ne_binary()) ->
                                                  ne_binary().

@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 
 %% API functions
--export([start_link/1
+-export([start_link/2
          ,get_endpoints/1
          ,handle_call_command/2
         ]).
@@ -26,6 +26,7 @@
 -define(CONSUME_OPTIONS, []).
 
 -record(state, {call_id
+                ,loopback_id
                 ,endpoint
                 ,endpoints
                 ,control_q
@@ -48,7 +49,7 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Endpoint) ->
+start_link(LoopbackId, Endpoint) ->
     CallId = <<"loopback-", (couch_mgr:get_uuid())/binary>>,
     Bindings = [{'call', [{'callid', CallId}]}
                 ,{'dialplan', []}
@@ -60,16 +61,23 @@ start_link(Endpoint) ->
                                       ,{'queue_options', ?QUEUE_OPTIONS}
                                       ,{'consume_options', ?CONSUME_OPTIONS}
                                      ]
-                            ,[CallId, Endpoint]).
+                            ,[CallId, LoopbackId, Endpoint]).
 
 get_endpoints(Pid) ->
     gen_server:call(Pid, get_endpoints).
 
 handle_call_command(JObj, Props) ->
-    Pid = props:get_value(self, Props),
-    lager:debug("sending command to ~p", [Pid]),
-    lager:debug("command ~p", [JObj]),
-    gen_server:cast(Pid, {call_command, JObj}).
+    Pid = props:get_value(server, Props),
+    LoopbackId = props:get_value(loopback_id, Props),
+    App = wh_json:get_value(<<"Application-Name">>, JObj),
+    lager:debug("application ~p", [App]),
+    handle_call_command(App, Pid, LoopbackId, JObj).
+
+handle_call_command(<<"bridge">>, Pid, _, JObj) ->
+    lager:debug("sending bridge command to ~p", [Pid]),
+    gen_server:cast(Pid, {call_command, JObj});
+handle_call_command(_, _, LoopbackId, JObj) ->
+    wh_cache:store_local(?ECALLMGR_CMDS_CACHE, {now(), LoopbackId}, JObj).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -86,9 +94,9 @@ handle_call_command(JObj, Props) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([CallId, Endpoint]) ->
+init([CallId, LoopbackId, Endpoint]) ->
     wh_util:put_callid(CallId),
-    {ok, #state{call_id = CallId, endpoint = Endpoint}}.
+    {ok, #state{call_id = CallId, endpoint = Endpoint, loopback_id = LoopbackId}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -169,9 +177,10 @@ handle_cast({gen_listener, {created_queue, CtrlQ}}, #state{call_id = CallId
     {noreply, NewState#state{channel_vars = [RespCCVs, EndpointCCVs | CCVs]
                              ,call_vars = [RespCallVars | CallVars]
                             }};
-handle_cast({call_command, Cmd}, State) ->
-    Application = wh_json:get_value(<<"Application-Name">>, Cmd),
-    handle_command(Application, Cmd, State);
+handle_cast({call_command, Data}, State) ->
+    Endpoints = wh_json:get_value(<<"Endpoints">>, Data, []),
+    NewState = State#state{endpoints = Endpoints},
+    maybe_reply(NewState);
 handle_cast({gen_listener,{is_consuming,true}}, State) ->
     {noreply, State};
 handle_cast(_Msg, State) ->
@@ -199,8 +208,8 @@ handle_info(_Info, State) ->
 %% @spec handle_event(Event, State) -> {reply, proplist()}
 %% @end
 %%--------------------------------------------------------------------
-handle_event(_Event, #state{self = Self} = _State) ->
-    {'reply', [{self, Self}]}.
+handle_event(_Event, #state{self = Self, loopback_id = LoopbackId} = _State) ->
+    {'reply', [{server, Self}, {loopback_id, LoopbackId}]}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -230,21 +239,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-handle_command(<<"set">>, Data, #state{channel_vars = ChannelVars, call_vars = CallVars} = State) ->
-    DataCallVars = wh_json:get_value(<<"Custom-Call-Vars">>, Data, wh_json:new()),
-    DataChannelVars = wh_json:get_value(<<"Custom-Channel-Vars">>, Data, wh_json:new()),
-    {noreply, State#state{channel_vars = [DataChannelVars | ChannelVars]
-                          ,call_vars = [DataCallVars | CallVars]}};
-handle_command(<<"bridge">>, Data, State) ->
-    Endpoints = wh_json:get_value(<<"Endpoints">>, Data, []),
-    NewState = State#state{endpoints = Endpoints},
-    maybe_reply(NewState);
-handle_command(Application, Data, #state{call_id = CallId} = State) ->
-    lager:debug([{trace, true}], "unknown application ~p", [Application]),
-    lager:debug([{trace, true}], "data ~p", [Data]),
-    fs_cmd(CallId, Data),
-    {noreply, State}.
-
 maybe_reply(#state{reply_to = undefined} = State) ->
     lager:debug("reply to is undefined"),
     {noreply, State};
@@ -259,13 +253,3 @@ maybe_reply(#state{reply_to = ReplyTo
     lager:debug("channel vars ~p", [ChannelVars]),
     gen_server:reply(ReplyTo, {ok, Endpoints}),
     {noreply, State}.
-
-fs_cmd(CallId, Data) ->
-    spawn(send_fs_cmd(CallId, Data)).
-
-send_fs_cmd(CallId, Data) ->
-    wh_util:put_callid(CallId),
-    Self = self(),
-    fun() ->
-            ecallmgr_call_command:exec_cmd(Self, CallId, Data, Self)
-    end.
