@@ -158,13 +158,8 @@ put(Context) ->
 -spec delete(cb_context:context(), path_token()) -> cb_context:context().
 delete(Context, _) ->
     Context2 = crossbar_doc:delete(Context),
-    case cb_context:resp_status(Context2) of
-        'success' ->
-            _ = couch_mgr:del_doc(?KZ_CCCPS_DB, wh_doc:id(cb_context:doc(Context2))),
-            Context2;
-        _ ->
-            Context2
-    end.
+    _ = couch_mgr:del_doc(?KZ_CCCPS_DB, wh_doc:id(cb_context:doc(Context2))),
+    Context2.
 
 -spec delete_orphaned_cccps(cb_context:context()) -> cb_context:context().
 delete_orphaned_cccps(Context) ->
