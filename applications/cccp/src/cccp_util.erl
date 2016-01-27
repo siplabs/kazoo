@@ -54,7 +54,8 @@ retries_exceeded() ->
 
 -spec caller_cid(whapps_call:call()) -> binary().
 caller_cid(Call) ->
-    wnm_util:normalize_number(whapps_call:caller_id_number(Call)).
+    AuthCID = whapps_call:kvs_fetch('auth_cid', whapps_call:caller_id_number(Call), Call),
+    wnm_util:normalize_number(AuthCID).
 
 -spec relay_amqp(wh_json:object(), wh_proplist()) -> 'ok'.
 relay_amqp(JObj, Props) ->

@@ -130,6 +130,20 @@ handle_cast({'relay_pid', PID}, State) when is_pid(PID) ->
     {'noreply', State#state{relay_pid = PID}};
 handle_cast({'offnet_ctl_queue', CtrlQ}, State) ->
     {'noreply', State#state{offnet_ctl_q = CtrlQ}};
+handle_cast({'originate_ready', JObj}, #state{call = Call
+                                              ,customer_number = Number
+                                             } = State) ->
+    Q = wh_json:get_value(<<"Server-ID">>, JObj),
+    CallId = wh_json:get_value(<<"Call-ID">>, JObj),
+    Call0 = whapps_call:from_json(JObj, Call),
+    NewCall = whapps_call:kvs_store('auth_cid', Number, Call0),
+    Prop = [{<<"Call-ID">>, CallId}
+            ,{<<"Msg-ID">>, wh_json:get_value(<<"Msg-ID">>, JObj)}
+            | wh_api:default_headers(?APP_NAME, ?APP_VERSION)
+           ],
+    wapi_dialplan:publish_originate_execute(Q, Prop),
+    cccp_platform_sup:new(NewCall),
+    {'stop', 'normal', State};
 handle_cast({'hangup_parked_call', _ErrMsg}, #state{parked_call_id = 'undefined'} = State) ->
     {'noreply', State};
 handle_cast({'hangup_parked_call', _ErrMsg}, #state{parked_call_id = CallId
@@ -185,16 +199,10 @@ handle_event(_JObj, #state{call = Call
 -spec handle_resource_response(wh_json:object(), wh_proplist()) -> 'ok'.
 handle_resource_response(JObj, Props) ->
     Srv = props:get_value('server', Props),
-    CallId = wh_json:get_value(<<"Call-ID">>, JObj),
     case wh_util:get_event_type(JObj) of
         {<<"resource">>, <<"offnet_resp">>} ->
             ResResp = wh_json:get_value(<<"Resource-Response">>, JObj),
             handle_originate_ready(ResResp, Props);
-        {<<"call_event">>,<<"CHANNEL_ANSWER">>} ->
-            Call = props:get_value('call', Props),
-            gen_listener:cast(Srv, {'call_update', Call}),
-            gen_listener:cast(Srv, {'relay_pid', self()}),
-            gen_listener:cast(Srv, {'parked', CallId, b_leg_number(Props)});
         {<<"call_event">>,<<"CHANNEL_DESTROY">>} ->
             gen_listener:cast(Srv, 'stop_callback');
         {<<"call_event">>,<<"CHANNEL_EXECUTE_COMPLETE">>} ->
@@ -276,18 +284,7 @@ handle_originate_ready(JObj, Props) ->
     Srv = props:get_value('server', Props),
     case wh_util:get_event_type(JObj) of
         {<<"dialplan">>, <<"originate_ready">>} ->
-            Q = wh_json:get_value(<<"Server-ID">>, JObj),
-            CallId = wh_json:get_value(<<"Call-ID">>, JObj),
-            CtrlQ = wh_json:get_value(<<"Control-Queue">>, JObj),
-            Call = whapps_call:set_control_queue(CtrlQ, whapps_call:from_route_req(JObj)),
-            gen_listener:cast(Srv, {'call_update', Call}),
-            Prop = [{<<"Call-ID">>, CallId}
-                    ,{<<"Msg-ID">>, wh_json:get_value(<<"Msg-ID">>, JObj)}
-                    | wh_api:default_headers(gen_listener:queue_name(Srv), ?APP_NAME, ?APP_VERSION)
-                   ],
-            gen_listener:cast(Srv, {'offnet_ctl_queue', CtrlQ}),
-            gen_listener:add_binding(Srv, {'call',[{'callid', CallId}]}),
-            wapi_dialplan:publish_originate_execute(Q, Prop);
+            gen_listener:cast(Srv, {'originate_ready', JObj});
         _ -> 'ok'
     end.
 
@@ -313,13 +310,4 @@ bridge_to_final_destination(CallId, ToDID, #state{customer_number = Number
     case is_binary(AuthDocId) of
         'false' -> 'ok';
         'true' -> cccp_util:store_last_dialed(ToDID, AuthDocId)
-    end.
-
-b_leg_number(Props) ->
-    case props:get_value('b_leg_number', Props) of
-        'undefined' ->
-            Call = props:get_value('call', Props),
-            {'num_to_dial', Number} = cccp_util:get_number(Call),
-            Number;
-        BLegNumber -> BLegNumber
     end.
