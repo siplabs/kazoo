@@ -565,13 +565,13 @@ handle_channel_destroyed(_,  #state{sanity_check_tref=SCTRef
     %% channel_destory (the last event we will ever receive from freeswitch for this call)
     %% then create an error and force advance. This will happen with dialplan actions that
     %% have not been executed on freeswitch but were already queued (for example in xferext).
-    %% Commonly events like masquerade, noop, ect
+    %% Commonly events like masquerade, noop, etc
     _ = case CurrentApp =:= 'undefined'
             orelse is_post_hangup_command(CurrentApp)
         of
             'true' -> 'ok';
             'false' ->
-                send_error_resp(CallId, CurrentCmd),
+                maybe_send_error_resp(CallId, CurrentCmd),
                 self() ! {'force_queue_advance', CallId}
         end,
     State#state{keep_alive_ref=get_keep_alive_ref(State#state{is_call_up='false'})
@@ -603,7 +603,7 @@ force_queue_advance(#state{call_id=CallId
                         execute_control_request(Cmd, State);
                     'false' ->
                         lager:debug("command '~s' is not valid after hangup, skipping", [AppName]),
-                        send_error_resp(CallId, Cmd),
+                        maybe_send_error_resp(CallId, Cmd),
                         self() ! {'force_queue_advance', CallId}
                 end,
             MsgId = wh_json:get_value(<<"Msg-ID">>, Cmd),
@@ -623,7 +623,7 @@ handle_execute_complete(<<"noop">>, JObj, #state{msg_id=CurrMsgId}=State) ->
     NoopId = wh_json:get_value(<<"Application-Response">>, JObj),
     case NoopId =:= CurrMsgId of
         'false' ->
-            lager:debug("recieved noop execute complete with incorrect id ~s (expecting ~s)"
+            lager:debug("received noop execute complete with incorrect id ~s (expecting ~s)"
                         ,[NoopId, CurrMsgId]
                        ),
             State;
@@ -684,7 +684,7 @@ forward_queue(#state{call_id = CallId
                     'true' -> execute_control_request(Cmd, State);
                     'false' ->
                         lager:debug("command '~s' is not valid after hangup, skipping", [AppName]),
-                        send_error_resp(CallId, Cmd),
+                        maybe_send_error_resp(CallId, Cmd),
                         self() ! {'force_queue_advance', CallId}
                 end,
             MsgId = wh_json:get_value(<<"Msg-ID">>, Cmd, <<>>),
@@ -882,7 +882,7 @@ handle_dialplan(JObj, #state{call_id=CallId
                     'true' -> execute_control_request(Cmd, State);
                     'false' ->
                         lager:debug("command '~s' is not valid after hangup, ignoring", [AppName]),
-                        send_error_resp(CallId, Cmd),
+                        maybe_send_error_resp(CallId, Cmd),
                         self() ! {'force_queue_advance', CallId}
                 end,
             MsgId = wh_json:get_value(<<"Msg-ID">>, Cmd),
@@ -1118,7 +1118,7 @@ execute_control_request(Cmd, #state{node=Node
             ST = erlang:get_stacktrace(),
             lager:debug("invalid command ~s: ~p", [wh_json:get_value(<<"Application-Name">>, Cmd), ErrMsg]),
             wh_util:log_stacktrace(ST),
-            send_error_resp(CallId, Cmd),
+            maybe_send_error_resp(CallId, Cmd),
             Srv ! {'force_queue_advance', CallId},
             'ok';
         'throw':{'msg', ErrMsg} ->
@@ -1151,6 +1151,15 @@ which_call_leg(CmdLeg, OtherLegs, CallId) ->
         'false' -> CallId
     end.
 
+-spec maybe_send_error_resp(ne_binary(), wh_json:object()) -> 'ok'.
+-spec maybe_send_error_resp(ne_binary(), ne_binary(), wh_json:object()) -> 'ok'.
+maybe_send_error_resp(CallId, Cmd) ->
+  AppName = wh_json:get_value(<<"Application-Name">>, Cmd),
+  maybe_send_error_resp(AppName, CallId, Cmd).
+
+maybe_send_error_resp(<<"hangup">>, _CallId, _Cmd) -> 'ok';
+maybe_send_error_resp(_, CallId, Cmd) -> send_error_resp(CallId, Cmd).
+
 -spec send_error_resp(ne_binary(), wh_json:object()) -> 'ok'.
 send_error_resp(CallId, Cmd) ->
     send_error_resp(CallId
@@ -1177,7 +1186,7 @@ send_error_resp(CallId, Cmd, Msg) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec get_keep_alive_ref(state()) -> 'undefined' | reference().
+-spec get_keep_alive_ref(state()) -> api_reference().
 get_keep_alive_ref(#state{is_call_up='true'}) -> 'undefined';
 get_keep_alive_ref(#state{keep_alive_ref='undefined'
                           ,is_call_up='false'

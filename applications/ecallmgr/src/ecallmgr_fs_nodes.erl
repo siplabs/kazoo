@@ -80,7 +80,7 @@
                      ,is_loaded = 'false' :: boolean() | '$3' | '_'
                     }).
 -type capability() :: #capability{}.
--type capabilities() :: [capability(),...] | [].
+-type capabilities() :: [capability()].
 
 -define(CAPABILITY_TBL, 'ecallmgr_fs_node_capabilities').
 
@@ -445,7 +445,7 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast({'fs_nodeup', NodeName}, State) ->
-    _ = wh_util:spawn(fun() -> maybe_handle_nodeup(NodeName, State) end),
+    _ = wh_util:spawn(fun maybe_handle_nodeup/2, [NodeName, State]),
     {'noreply', State};
 handle_cast({'update_node', #node{node=NodeName, connected=Connected}=Node}
             ,#state{nodes=Nodes}=State) ->
@@ -460,9 +460,7 @@ handle_cast({'remove_capabilities', NodeName}, State) ->
     lager:debug("removed ~p capabilities from ~s", [_Rm, NodeName]),
     {'noreply', State};
 handle_cast({'rm_fs_node', NodeName}, State) ->
-    _ = wh_util:spawn(fun() ->
-                              maybe_rm_fs_node(NodeName, State)
-                      end),
+    _ = wh_util:spawn(fun maybe_rm_fs_node/2, [NodeName, State]),
     {'noreply', State};
 handle_cast(_Cast, State) ->
     lager:debug("unhandled cast: ~p", [_Cast]),
@@ -488,7 +486,7 @@ handle_info('expire_sip_subscriptions', Cache) ->
     _ = erlang:send_after(?EXPIRE_CHECK, self(), 'expire_sip_subscriptions'),
     {'noreply', Cache};
 handle_info({'nodedown', NodeName}, State) ->
-    _ = wh_util:spawn(fun() -> maybe_handle_nodedown(NodeName, State) end),
+    _ = wh_util:spawn(fun maybe_handle_nodedown/2, [NodeName, State]),
     call_control_fs_nodedown(NodeName),
     {'noreply', State};
 handle_info({'DOWN', Ref, 'process', Pid, _Reason}, #state{init_pidref={Pid, Ref}}=State) ->
@@ -577,7 +575,7 @@ maybe_handle_nodedown(NodeName, #state{nodes=Nodes}=State) ->
     end.
 
 -spec maybe_add_node(text(), text(), wh_proplist(), state()) ->
-                            'ok' | {'error', _}.
+                            'ok' | {'error', any()}.
 maybe_add_node(NodeName, Cookie, Options, #state{self=Srv, nodes=Nodes}) ->
     case dict:find(NodeName, Nodes) of
         {'ok', #node{}} -> {'error', 'node_exists'};
@@ -603,8 +601,9 @@ maybe_rm_fs_node(NodeName, #state{nodes=Nodes}=State) ->
     end.
 
 -spec rm_fs_node(fs_node(), state()) -> 'ok'.
-rm_fs_node(#node{}=Node, #state{self=Srv}) ->
+rm_fs_node(#node{node=NodeName}=Node, #state{self=Srv}) ->
     _ = maybe_disconnect_from_node(Node),
+    _ = ecallmgr_fs_pinger_sup:remove_node(NodeName),
     gen_server:cast(Srv, {'remove_node', Node}).
 
 -spec handle_nodeup(fs_node(), state()) -> 'ok'.
@@ -621,7 +620,7 @@ handle_nodeup(#node{}=Node, #state{self=Srv}) ->
 
 -spec handle_nodedown(fs_node(), state()) -> 'ok'.
 handle_nodedown(#node{node=NodeName}=Node, #state{self=Srv}) ->
-    lager:critical("recieved node down notice for ~s", [NodeName]),
+    lager:critical("received node down notice for ~s", [NodeName]),
     _ = maybe_disconnect_from_node(Node),
     gen_server:cast(Srv, {'remove_capabilities', NodeName}),
     case maybe_connect_to_node(Node) of
@@ -633,7 +632,7 @@ handle_nodedown(#node{node=NodeName}=Node, #state{self=Srv}) ->
             gen_server:cast(Srv, {'update_node', Node#node{connected='true'}})
     end.
 
--spec maybe_connect_to_node(fs_node()) -> 'ok' | {'error', _}.
+-spec maybe_connect_to_node(fs_node()) -> 'ok' | {'error', any()}.
 maybe_connect_to_node(#node{node=NodeName}=Node) ->
     lager:debug("attempting to connect to freeswitch node ~s", [NodeName]),
     case maybe_ping_node(Node) of
@@ -644,7 +643,7 @@ maybe_connect_to_node(#node{node=NodeName}=Node) ->
             'ok'
     end.
 
--spec maybe_ping_node(fs_node()) -> 'ok' | {'error', _}.
+-spec maybe_ping_node(fs_node()) -> 'ok' | {'error', any()}.
 maybe_ping_node(#node{node=NodeName
                       ,cookie=Cookie
                      }=Node) ->
@@ -658,7 +657,7 @@ maybe_ping_node(#node{node=NodeName
             {'error', 'no_connection'}
     end.
 
--spec maybe_start_node_handlers(fs_node()) -> 'ok' | {'error', _}.
+-spec maybe_start_node_handlers(fs_node()) -> 'ok' | {'error', any()}.
 maybe_start_node_handlers(#node{node=NodeName
                                 ,client_version=Version
                                 ,cookie=Cookie
@@ -768,7 +767,7 @@ start_preconfigured_servers() ->
             start_preconfigured_servers();
         Nodes when is_list(Nodes) ->
             lager:info("successfully retrieved FreeSWITCH nodes to connect with, doing so..."),
-            _ = [wh_util:spawn(fun() -> start_node_from_config(N) end) || N <- Nodes],
+            _ = [wh_util:spawn(fun start_node_from_config/1, [N]) || N <- Nodes],
             'ok';
         'undefined' ->
             lager:debug("failed to receive a response for node configs"),
@@ -776,7 +775,7 @@ start_preconfigured_servers() ->
             _ = ecallmgr_config:flush(<<"fs_nodes">>),
             start_preconfigured_servers();
         _E ->
-            lager:debug("recieved a non-list for fs_nodes: ~p", [_E]),
+            lager:debug("received a non-list for fs_nodes: ~p", [_E]),
             timer:sleep(5 * ?MILLISECONDS_IN_SECOND),
             _ = ecallmgr_config:flush(<<"fs_nodes">>),
             start_preconfigured_servers()

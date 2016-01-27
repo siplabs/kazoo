@@ -249,7 +249,7 @@ post(Context, AccountId) ->
     Context1 = crossbar_doc:save(Context),
     case cb_context:resp_status(Context1) of
         'success' ->
-            _ = wh_util:spawn('provisioner_util', 'maybe_update_account', [Context1]),
+            _ = wh_util:spawn(fun provisioner_util:maybe_update_account/1, [Context1]),
             JObj = cb_context:doc(Context1),
             _ = replicate_account_definition(JObj),
             support_depreciated_billing_id(wh_json:get_value(<<"billing_id">>, JObj)
@@ -285,6 +285,7 @@ put(Context) ->
         C ->
             Tree = kz_account:tree(JObj),
             _ = maybe_update_descendants_count(Tree),
+            _ = create_apps_store_doc(AccountId),
             leak_pvt_fields(C)
     catch
         'throw':C ->
@@ -326,6 +327,7 @@ delete(Context, Account) ->
             _ = maybe_update_descendants_count(kz_account:tree(cb_context:doc(Context1))),
             Context1
     end.
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -334,7 +336,17 @@ delete(Context, Account) ->
 -spec maybe_update_descendants_count(ne_binaries()) -> 'ok'.
 maybe_update_descendants_count([]) -> 'ok';
 maybe_update_descendants_count(Tree) ->
-    _ = wh_util:spawn('crossbar_util', 'descendants_count', [lists:last(Tree)]),
+    _ = wh_util:spawn(fun crossbar_util:descendants_count/1, [lists:last(Tree)]),
+    'ok'.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%%--------------------------------------------------------------------
+-spec create_apps_store_doc(ne_binary()) -> 'ok'.
+create_apps_store_doc(AccountId) ->
+    _ = wh_util:spawn(fun cb_apps_util:create_apps_store_doc/1, [AccountId]),
     'ok'.
 
 %%--------------------------------------------------------------------
@@ -1290,7 +1302,10 @@ create_account_definition(Context) ->
              ,{<<"pvt_created">>, TStamp}
              ,{<<"pvt_vsn">>, <<"1">>}
             ],
-    case couch_mgr:save_doc(AccountDb, wh_json:set_values(Props, cb_context:doc(Context))) of
+
+    JObj = maybe_set_trial_expires(wh_json:set_values(Props, cb_context:doc(Context))),
+
+    case couch_mgr:save_doc(AccountDb, JObj) of
         {'ok', AccountDef}->
             _ = replicate_account_definition(AccountDef),
             cb_context:setters(Context
@@ -1302,6 +1317,20 @@ create_account_definition(Context) ->
             lager:debug("unable to create account definition: ~p", [_R]),
             throw(cb_context:add_system_error('datastore_fault', Context))
     end.
+
+-spec maybe_set_trial_expires(wh_json:object()) -> wh_json:object().
+maybe_set_trial_expires(JObj) ->
+    case kz_account:is_trial_account(JObj) of
+        'false' -> JObj;
+        'true' -> set_trial_expires(JObj)
+    end.
+
+-spec set_trial_expires(wh_json:object()) -> wh_json:object().
+set_trial_expires(JObj) ->
+    TrialTime = whapps_config:get_integer(?ACCOUNTS_CONFIG_CAT, <<"trial_time">>, ?SECONDS_IN_DAY * 14),
+    Expires = wh_util:now_s(wh_util:now()) + TrialTime,
+    kz_account:set_trial_expiration(JObj, Expires).
+
 
 -spec load_initial_views(cb_context:context()) -> 'ok'.
 load_initial_views(Context)->
@@ -1338,7 +1367,7 @@ ensure_views(Context, [Id|Ids], Retries) ->
 %%--------------------------------------------------------------------
 -spec replicate_account_definition(wh_json:object()) ->
                                           {'ok', wh_json:object()} |
-                                          {'error', _}.
+                                          {'error', any()}.
 replicate_account_definition(JObj) ->
     AccountId = wh_doc:id(JObj),
     case couch_mgr:lookup_doc_rev(?WH_ACCOUNTS_DB, AccountId) of
@@ -1519,7 +1548,8 @@ delete_mod_dbs(AccountId, Year, Month) ->
 delete_remove_from_accounts(Context) ->
     case couch_mgr:open_doc(?WH_ACCOUNTS_DB, cb_context:account_id(Context)) of
         {'ok', JObj} ->
-            _ = wh_util:spawn('provisioner_util', 'maybe_delete_account', [Context]),
+            _ = wh_util:spawn(fun provisioner_util:maybe_delete_account/1, [Context]),
+            _ = wh_util:spawn(fun cb_mobile_manager:delete_account/1, [Context]),
             crossbar_doc:delete(
               cb_context:setters(Context
                                  ,[{fun cb_context:set_account_db/2, ?WH_ACCOUNTS_DB}

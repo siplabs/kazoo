@@ -49,9 +49,7 @@ handle_route_win(JObj, _Props) ->
     CallId = wh_json:get_value(<<"Call-ID">>, JObj),
     case whapps_call:retrieve(CallId, ?APP_NAME) of
         {'ok', Call} ->
-            NewCall = whapps_call:from_route_win(JObj, Call),
-            whapps_call:cache(NewCall, ?APP_NAME),
-            handle_cccp_call(NewCall);
+            handle_cccp_call(whapps_call:from_route_win(JObj, Call));
         {'error', _R} ->
             lager:debug("Unable to find call record during route_win")
     end.
@@ -82,7 +80,6 @@ handle_callback(CallerNumber, Call) ->
                                       ,{<<"Outbound-Caller-ID-Number">>, cccp_auth:outbound_cid(Auth)}
                                       ,{<<"Auth-Doc-Id">>, cccp_auth:auth_doc_id(Auth)}
                                      ]),
-            timer:sleep(2 * ?MILLISECONDS_IN_SECOND),
             cccp_callback_sup:new(JObj);
         E ->
             lager:info("No caller information found for ~p. Won't call it back. (~p)", [CallerNumber, E])

@@ -25,6 +25,7 @@
         ,is_account_mod/1
         ]).
 -export([get_account_by_realm/1
+         ,get_account_by_ip/1, get_ccvs_by_ip/1
          ,get_accounts_by_name/1
         ]).
 -export([get_master_account_id/0
@@ -58,10 +59,13 @@
 -define(REPLICATE_ENCODING, 'encoded').
 -define(AGG_LIST_BY_REALM, <<"accounts/listing_by_realm">>).
 -define(AGG_LIST_BY_NAME, <<"accounts/listing_by_name">>).
+-define(AGG_LIST_BY_IP, <<"credentials/lookup_by_ip">>).
 -define(PROMPTS_CONFIG_CAT, <<"prompts">>).
 
 -define(ACCT_BY_NAME_CACHE(Name), {?MODULE, 'account_by_name', Name}).
 -define(ACCT_BY_REALM_CACHE(Name), {?MODULE, 'account_by_realm', Name}).
+-define(ACCT_BY_IP_CACHE(IP), {?MODULE, 'account_by_ip', IP}).
+-define(GET_BY_CACHE_ORIGIN, [{'origin', [ {'db', ?WH_ACCOUNTS_DB, <<"account">>}]}]).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -162,7 +166,7 @@ find_master_account_id({'ok', Accounts}) ->
     Ok.
 
 -spec get_master_account_db() -> {'ok', ne_binary()} |
-                                 {'error', _}.
+                                 {'error', any()}.
 get_master_account_db() ->
     case get_master_account_id() of
         {'error', _}=E -> E;
@@ -231,7 +235,25 @@ get_all_accounts_and_mods() -> get_all_accounts_and_mods(?REPLICATE_ENCODING).
 
 get_all_accounts_and_mods(Encoding) ->
     {'ok', Databases} = couch_mgr:db_info(),
-    [wh_util:format_account_id(Db, Encoding) || Db <- Databases, is_account_db(Db) orelse is_account_mod(Db)].
+    [format_db(Db, Encoding)
+     || Db <- Databases,
+        is_account_db(Db)
+            orelse is_account_mod(Db)
+    ].
+
+-spec format_db(ne_binary(), 'unencoded' | 'encoded' | 'raw') -> ne_binary().
+format_db(Db, Encoding) ->
+    Fs =
+        [{fun is_account_db/1, fun wh_util:format_account_id/2}
+         ,{fun is_account_mod/1, fun wh_util:format_account_modb/2}
+        ],
+    format_db(Db, Encoding, Fs).
+
+format_db(Db, Encoding, [{Predicate, Formatter}|Fs]) ->
+    case Predicate(Db) of
+        'true' -> Formatter(Db, Encoding);
+        'false' -> format_db(Db, Encoding, Fs)
+    end.
 
 -spec get_all_account_mods() -> ne_binaries().
 -spec get_all_account_mods('unencoded' | 'encoded' | 'raw') -> ne_binaries().
@@ -240,7 +262,7 @@ get_all_account_mods() ->
 
 get_all_account_mods(Encoding) ->
     {'ok', Databases} = couch_mgr:db_info(),
-    [wh_util:format_account_id(Db, Encoding) || Db <- Databases, is_account_mod(Db)].
+    [wh_util:format_account_modb(Db, Encoding) || Db <- Databases, is_account_mod(Db)].
 
 -spec get_account_mods(ne_binary()) -> ne_binaries().
 -spec get_account_mods(ne_binary(), 'unencoded' | 'encoded' | 'raw') -> ne_binaries().
@@ -256,13 +278,13 @@ get_account_mods(AccountId, Encoding) ->
     ].
 
 -spec is_matched_account_mod(ne_binary(), ne_binary()) -> boolean().
-is_matched_account_mod(<<"account/", DbActId:34/binary, _/binary>>
-                       ,<<"account/", SearchId/binary>>
-                      ) when DbActId =:= SearchId ->
+is_matched_account_mod(?MATCH_MODB_SUFFIX_UNENCODED(A, B, Rest, _, _)  %% DbActId
+                       ,?MATCH_ACCOUNT_UNENCODED(A, B, Rest)  %% SearchId
+                      ) ->
     'true';
-is_matched_account_mod(<<"account%2F", DbActId:38/binary, _/binary>>
-                       ,<<"account%2F",SearchId/binary>>
-                      ) when DbActId =:= SearchId ->
+is_matched_account_mod(?MATCH_MODB_SUFFIX_ENCODED(A, B, Rest, _, _)  %% DbActId
+                       ,?MATCH_ACCOUNT_ENCODED(A, B, Rest)  %% SearchId
+                      ) ->
     'true';
 is_matched_account_mod(_, _) ->
     'false'.
@@ -287,6 +309,56 @@ is_account_db(Db) -> couch_util:db_classification(Db) =:= 'account'.
 get_account_by_realm(RawRealm) ->
     Realm = wh_util:to_lower_binary(RawRealm),
     get_accounts_by(Realm, ?ACCT_BY_REALM_CACHE(Realm), ?AGG_LIST_BY_REALM).
+
+-spec get_account_by_ip(ne_binary()) -> getby_return().
+get_account_by_ip(IP) ->
+    case get_ccvs_by_ip(IP) of
+        {'error', 'not_found'}=E -> E;
+        {'ok', AccountCCVs} ->
+            {'ok', props:get_value(<<"Account-ID">>, AccountCCVs)}
+    end.
+
+-spec get_ccvs_by_ip(ne_binary()) -> {'ok', wh_proplist()} |
+                                     {'error', 'not_found'}.
+get_ccvs_by_ip(IP) ->
+    case wh_cache:peek_local(?WHAPPS_GETBY_CACHE, ?ACCT_BY_IP_CACHE(IP)) of
+        {'ok', {'error', 'not_found'}=E} -> E;
+        {'error', 'not_found'} -> do_get_ccvs_by_ip(IP);
+        {'ok', _AccountCCVs} = OK -> OK
+    end.
+
+-spec do_get_ccvs_by_ip(ne_binary()) ->
+                               {'ok', wh_proplist()} |
+                               {'error', 'not_found'}.
+do_get_ccvs_by_ip(IP) ->
+    case couch_mgr:get_results(?WH_SIP_DB, ?AGG_LIST_BY_IP, [{'key', IP}]) of
+        {'ok', []} ->
+            lager:debug("no entry in ~s for IP: ~s", [?WH_SIP_DB, IP]),
+            wh_cache:store_local(?WHAPPS_GETBY_CACHE, ?ACCT_BY_IP_CACHE(IP), {'error', 'not_found'}),
+            {'error', 'not_found'};
+        {'ok', [Doc|_]} ->
+            lager:debug("found IP ~s in db ~s (~s)", [IP, ?WH_SIP_DB, wh_doc:id(Doc)]),
+            AccountCCVs = account_ccvs_from_ip_auth(Doc),
+            wh_cache:store_local(?WHAPPS_GETBY_CACHE, ?ACCT_BY_IP_CACHE(IP), AccountCCVs),
+            {'ok', AccountCCVs};
+        {'error', _E} = Error ->
+            lager:debug("error looking up by IP: ~s: ~p", [IP, _E]),
+            Error
+    end.
+
+-spec account_ccvs_from_ip_auth(wh_json:object()) -> wh_proplist().
+account_ccvs_from_ip_auth(Doc) ->
+    AccountID = wh_json:get_value([<<"value">>, <<"account_id">>], Doc),
+    OwnerID = wh_json:get_value([<<"value">>, <<"owner_id">>], Doc),
+    AuthType = wh_json:get_value([<<"value">>, <<"authorizing_type">>], Doc, <<"anonymous">>),
+
+    props:filter_undefined(
+      [{<<"Account-ID">>, AccountID}
+       ,{<<"Owner-ID">>, OwnerID}
+       ,{<<"Authorizing-ID">>, wh_doc:id(Doc)}
+       ,{<<"Inception">>, <<"on-net">>}
+       ,{<<"Authorizing-Type">>, AuthType}
+      ]).
 
 %%--------------------------------------------------------------------
 %% @public
@@ -328,10 +400,7 @@ do_get_accounts_by(What, CacheKey, View) ->
 
 -spec cache(tuple(), ne_binaries()) -> 'ok'.
 cache(Key, AccountDbs) ->
-    CacheProps = [{'origin', [ {'db', AccountDb, wh_util:format_account_id(AccountDb, 'raw')}
-                               || AccountDb <- AccountDbs
-                             ]}],
-    wh_cache:store_local(?WHAPPS_GETBY_CACHE, Key, AccountDbs, CacheProps).
+    wh_cache:store_local(?WHAPPS_GETBY_CACHE, Key, AccountDbs, ?GET_BY_CACHE_ORIGIN).
 
 %%--------------------------------------------------------------------
 %% @public
@@ -575,18 +644,20 @@ get_destination(JObj, Cat, Key) ->
             end
     end.
 
+-spec try_split(api_binary()) ->
+                       {ne_binary(), ne_binary()} |
+                       'undefined'.
 -spec try_split(ne_binary(), wh_json:object()) ->
                        {ne_binary(), ne_binary()} |
                        'undefined'.
 try_split(Key, JObj) ->
-    case wh_json:get_value(Key, JObj) of
-        'undefined' -> 'undefined';
-        Bin when is_binary(Bin) ->
-            case binary:split(Bin, <<"@">>) of
-                [<<"nouser">>, _] -> 'undefined';
-                [_, _]=Dest -> list_to_tuple(Dest)
-            end
-    end.
+    try_split(wh_json:get_value(Key, JObj)).
+
+try_split('undefined') -> 'undefined';
+try_split(<<"nouser@", _/binary>>) -> 'undefined';
+try_split(<<_/binary>> = Bin) ->
+    [_, _] = Dest = binary:split(Bin, <<"@">>),
+    list_to_tuple(Dest).
 
 -spec write_tts_file(ne_binary(), ne_binary()) ->
                             'ok' |

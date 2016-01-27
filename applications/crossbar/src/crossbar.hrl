@@ -1,7 +1,6 @@
 -ifndef(CROSSBAR_HRL).
 
 -include_lib("whistle/include/wh_types.hrl").
--include_lib("whistle/include/wh_amqp.hrl").
 -include_lib("whistle/include/wh_log.hrl").
 -include_lib("whistle/include/wh_databases.hrl").
 -include_lib("whistle/include/kz_system_config.hrl").
@@ -79,6 +78,8 @@
                           ,'cb_user_auth', 'cb_users'
                           ,'cb_vmboxes'
                           ,'cb_webhooks', 'cb_whitelabel'
+                          ,'cb_ledgers', 'cb_comments'
+                          ,'cb_websockets', 'cb_alerts'
                          ]).
 
 -define(DEPRECATED_MODULES, ['cb_local_resources'
@@ -95,6 +96,7 @@
           ,charsets_provided = [<<"iso-8859-1">>] :: ne_binaries() %% all charsets provided
           ,encodings_provided = [<<"gzip;q=1.0">>,<<"identity;q=0.5">>] :: ne_binaries() %% gzip and identity
           ,auth_token = <<>> :: binary() | 'undefined'
+          ,auth_token_type = 'x-auth-token' :: 'x-auth-token' | 'basic' | 'oauth' | 'unknown'
           ,auth_account_id :: api_binary()
           ,auth_doc :: api_object()
           ,req_verb = ?HTTP_GET :: http_method() % see ?ALLOWED_METHODS
@@ -114,7 +116,7 @@
           ,resp_etag :: 'automatic' | string() | api_binary()
           ,resp_status = 'error' :: crossbar_status()
           ,resp_error_msg :: wh_json:key()
-          ,resp_error_code :: pos_integer()
+          ,resp_error_code :: api_integer()
           ,resp_data :: resp_data()
           ,resp_headers = [] :: wh_proplist() %% allow the modules to set headers (like Location: XXX to get a 201 response code)
           ,resp_envelope = wh_json:new() :: wh_json:object()

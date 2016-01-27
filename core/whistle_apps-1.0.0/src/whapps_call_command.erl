@@ -105,11 +105,11 @@
 
 -export([conference/2, conference/3
          ,conference/4, conference/5
-         ,conference/6
+         ,conference/6, conference/7
         ]).
 -export([b_conference/2, b_conference/3
          ,b_conference/4, b_conference/5
-         ,b_conference/6
+         ,b_conference/6, b_conference/7
         ]).
 
 -export([noop/1]).
@@ -201,7 +201,7 @@
                               {'tts', ne_binary()} |
                               {'tts', ne_binary(), ne_binary()} |
                               {'tts', ne_binary(), ne_binary(), ne_binary()}.
--type audio_macro_prompts() :: [audio_macro_prompt(),...] | [].
+-type audio_macro_prompts() :: [audio_macro_prompt()].
 -export_type([audio_macro_prompt/0
               ,audio_macro_prompts/0
              ]).
@@ -358,7 +358,7 @@ channel_status_filter([JObj|JObjs]) ->
 %%      for them in the receive blocks below.
 %% @end
 %%--------------------------------------------------------------------
--type relay_fun() :: fun((pid() | atom(), term()) -> any()).
+-type relay_fun() :: fun((pid() | atom(), any()) -> any()).
 -spec relay_event(pid(), wh_json:object()) -> any().
 -spec relay_event(pid(), wh_json:object(), relay_fun()) -> any().
 relay_event(Pid, JObj) ->
@@ -371,7 +371,7 @@ relay_event(Pid, JObj, RelayFun) ->
                            {'error', 'timeout'}.
 -spec receive_event(wh_timeout(), boolean()) ->
                            {'ok', wh_json:object()} |
-                           {'other', wh_json:object() | term()} |
+                           {'other', wh_json:object() | any()} |
                            {'error', 'timeout'}.
 receive_event(Timeout) -> receive_event(Timeout, 'true').
 receive_event(T, _) when T =< 0 -> {'error', 'timeout'};
@@ -1918,13 +1918,15 @@ wait_for_say(Call) ->
 -spec conference(ne_binary(), boolean(), whapps_call:call()) -> 'ok'.
 -spec conference(ne_binary(), boolean(), boolean(), whapps_call:call()) -> 'ok'.
 -spec conference(ne_binary(), boolean(), boolean(), boolean(), whapps_call:call()) -> 'ok'.
--spec conference(ne_binary(), boolean(), boolean(), boolean(), boolean(), whapps_call:call()) -> 'ok'.
+-spec conference(ne_binary(), boolean(), boolean(), boolean(), ne_binary(), whapps_call:call()) -> 'ok'.
+-spec conference(ne_binary(), boolean(), boolean(), boolean(), ne_binary(), boolean(), whapps_call:call()) -> 'ok'.
 
 -spec b_conference(ne_binary(), whapps_call:call()) -> whapps_api_std_return().
 -spec b_conference(ne_binary(), boolean(), whapps_call:call()) -> whapps_api_std_return().
 -spec b_conference(ne_binary(), boolean(), boolean(), whapps_call:call()) -> whapps_api_std_return().
 -spec b_conference(ne_binary(), boolean(), boolean(), boolean(), whapps_call:call()) -> whapps_api_std_return().
--spec b_conference(ne_binary(), boolean(), boolean(), boolean(), boolean(), whapps_call:call()) -> whapps_api_std_return().
+-spec b_conference(ne_binary(), boolean(), boolean(), boolean(), ne_binary(), whapps_call:call()) -> whapps_api_std_return().
+-spec b_conference(ne_binary(), boolean(), boolean(), boolean(), ne_binary(), boolean(), whapps_call:call()) -> whapps_api_std_return().
 
 conference(ConfId, Call) ->
     conference(ConfId, 'false', Call).
@@ -1933,13 +1935,16 @@ conference(ConfId, Mute, Call) ->
 conference(ConfId, Mute, Deaf, Call) ->
     conference(ConfId, Mute, Deaf, 'false', Call).
 conference(ConfId, Mute, Deaf, Moderator, Call) ->
-    conference(ConfId, Mute, Deaf, Moderator, 'false', Call).
-conference(ConfId, Mute, Deaf, Moderator, Reinvite, Call) ->
+    conference(ConfId, Mute, Deaf, Moderator, <<"undefined">>, Call).
+conference(ConfId, Mute, Deaf, Moderator, ProfileName, Call) ->
+    conference(ConfId, Mute, Deaf, Moderator, ProfileName, 'false', Call).
+conference(ConfId, Mute, Deaf, Moderator, ProfileName, Reinvite, Call) ->
     Command = [{<<"Application-Name">>, <<"conference">>}
                ,{<<"Conference-ID">>, ConfId}
                ,{<<"Mute">>, Mute}
                ,{<<"Deaf">>, Deaf}
                ,{<<"Moderator">>, Moderator}
+               ,{<<"Profile">>, ProfileName}
                ,{<<"Reinvite">>, Reinvite}
               ],
     send_command(Command, Call).
@@ -1951,9 +1956,11 @@ b_conference(ConfId, Mute, Call) ->
 b_conference(ConfId, Mute, Deaf, Call) ->
     b_conference(ConfId, Mute, Deaf, 'false', Call).
 b_conference(ConfId, Mute, Deaf, Moderator, Call) ->
-    b_conference(ConfId, Mute, Deaf, Moderator, 'false', Call).
-b_conference(ConfId, Mute, Deaf, Moderator, Reinvite, Call) ->
-    conference(ConfId, Mute, Deaf, Moderator, Reinvite, Call),
+    b_conference(ConfId, Mute, Deaf, Moderator, <<"default">>, Call).
+b_conference(ConfId, Mute, Deaf, Moderator, Profile, Call) ->
+    b_conference(ConfId, Mute, Deaf, Moderator, Profile, 'false', Call).
+b_conference(ConfId, Mute, Deaf, Moderator, Profile, Reinvite, Call) ->
+    conference(ConfId, Mute, Deaf, Moderator, Profile, Reinvite, Call),
     wait_for_message(Call, <<"conference">>, <<"CHANNEL_EXECUTE">>).
 
 %%--------------------------------------------------------------------
@@ -2181,13 +2188,13 @@ do_collect_digits(#wcc_collect_digits{max_digits=MaxDigits
                                         {'noop_complete'} |
                                         {'continue'} |
                                         {'decrement'} |
-                                        {'error', _}.
+                                        {'error', any()}.
 -spec handle_collect_digit_event(wh_json:object(), api_binary(), {ne_binary(), ne_binary(), ne_binary()}) ->
                                         {'dtmf', ne_binary()} |
                                         {'noop_complete'} |
                                         {'continue'} |
                                         {'decrement'} |
-                                        {'error', _}.
+                                        {'error', any()}.
 handle_collect_digit_event(JObj, NoopId) ->
     handle_collect_digit_event(JObj, NoopId, get_event_type(JObj)).
 

@@ -34,8 +34,7 @@
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec send_email(ne_binary(), 'undefined' | binary(), term()) ->
-                        'ok' | {'error', _}.
+-spec send_email(ne_binary(), api_binary(), any()) -> 'ok' | {'error', any()}.
 send_email(_, 'undefined', _) -> lager:debug("no email to send to");
 send_email(_, <<>>, _) -> lager:debug("empty email to send to");
 send_email(From, To, Email) ->
@@ -111,7 +110,7 @@ normalize_proplist(Props) ->
 normalize_proplist_element({K, V}) when is_list(V) ->
     {normalize_value(K), normalize_proplist(V)};
 normalize_proplist_element({K, V}) when is_binary(V) ->
-    {normalize_value(K), mochiweb_html:escape(V)};
+    {normalize_value(K), kz_html:escape(V)};
 normalize_proplist_element({K, V}) ->
     {normalize_value(K), V};
 normalize_proplist_element(Else) ->
@@ -172,7 +171,7 @@ get_default_template(Category, Key) ->
 %%--------------------------------------------------------------------
 -spec render_template(api_binary(), atom(), wh_proplist()) ->
                                    {'ok', string()} |
-                                   {'error', _}.
+                                   {'error', any()}.
 render_template(Template, DefaultTemplate, Props) ->
     case do_render_template(Template, DefaultTemplate, Props) of
         {'ok', R} -> {'ok', binary_to_list(iolist_to_binary(R))};
@@ -181,7 +180,7 @@ render_template(Template, DefaultTemplate, Props) ->
 
 -spec do_render_template(api_binary(), atom(), wh_proplist()) ->
                                    {'ok', string()} |
-                                   {'error', _}.
+                                   {'error', any()}.
 do_render_template('undefined', DefaultTemplate, Props) ->
     lager:debug("rendering default ~s template", [DefaultTemplate]),
     DefaultTemplate:render(Props);

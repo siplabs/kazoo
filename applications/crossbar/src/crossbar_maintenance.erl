@@ -23,6 +23,7 @@
 -export([find_account_by_number/1]).
 -export([find_account_by_name/1]).
 -export([find_account_by_realm/1]).
+-export([find_account_by_id/1]).
 -export([enable_account/1, disable_account/1]).
 -export([promote_account/1, demote_account/1]).
 -export([allow_account_number_additions/1, disallow_account_number_additions/1]).
@@ -93,6 +94,7 @@ migrate_account_data(Account) ->
     _ = migrate_ring_group_callflow(Account),
     _ = cb_vmboxes:migrate(Account),
     _ = cb_lists_v2:maybe_migrate(Account),
+    _ = cb_apps_maintenance:migrate(Account),
     'no_return'.
 
 -spec add_missing_modules(atoms(), atoms()) -> 'no_return'.
@@ -191,7 +193,7 @@ running_modules() -> crossbar_bindings:modules_loaded().
 %%--------------------------------------------------------------------
 -spec find_account_by_number(input_term()) ->
                                     {'ok', ne_binary()} |
-                                    {'error', _}.
+                                    {'error', any()}.
 find_account_by_number(Number) when not is_binary(Number) ->
     find_account_by_number(wh_util:to_binary(Number));
 find_account_by_number(Number) ->
@@ -219,7 +221,7 @@ find_account_by_number(Number) ->
 -spec find_account_by_name(input_term()) ->
                                   {'ok', ne_binary()} |
                                   {'multiples', [ne_binary(),...]} |
-                                  {'error', _}.
+                                  {'error', any()}.
 find_account_by_name(Name) when not is_binary(Name) ->
     find_account_by_name(wh_util:to_binary(Name));
 find_account_by_name(Name) ->
@@ -247,7 +249,7 @@ find_account_by_name(Name) ->
 -spec find_account_by_realm(input_term()) ->
                                    {'ok', ne_binary()} |
                                    {'multiples', [ne_binary(),...]} |
-                                   {'error', _}.
+                                   {'error', any()}.
 find_account_by_realm(Realm) when not is_binary(Realm) ->
     find_account_by_realm(wh_util:to_binary(Realm));
 find_account_by_realm(Realm) ->
@@ -272,16 +274,23 @@ find_account_by_realm(Realm) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
+-spec find_account_by_id(input_term()) ->
+                                   {'ok', ne_binary()} |
+                                   {'error', any()}.
+find_account_by_id(Id) when is_binary(Id) ->
+    print_account_info(wh_util:format_account_id(Id, 'encoded'));
+find_account_by_id(Id) ->
+    find_account_by_id(wh_util:to_binary(Id)).
+
+%%--------------------------------------------------------------------
+%% @public
+%% @doc
+%%
+%% @end
+%%--------------------------------------------------------------------
 -spec allow_account_number_additions(input_term()) -> 'ok' | 'failed'.
 allow_account_number_additions(AccountId) ->
-    case update_account(AccountId, <<"pvt_wnm_allow_additions">>, 'true') of
-        {'ok', _} ->
-            io:format("allowing account '~s' to add numbers~n", [AccountId]);
-        {'error', Reason} ->
-            io:format("failed to find account: ~p~n", [Reason]),
-            'failed'
-    end.
-
+    wh_util:set_allow_number_additions(AccountId, 'true').
 %%--------------------------------------------------------------------
 %% @public
 %% @doc
@@ -290,13 +299,7 @@ allow_account_number_additions(AccountId) ->
 %%--------------------------------------------------------------------
 -spec disallow_account_number_additions(input_term()) -> 'ok' | 'failed'.
 disallow_account_number_additions(AccountId) ->
-    case update_account(AccountId, <<"pvt_wnm_allow_additions">>, 'false') of
-        {'ok', _} ->
-            io:format("disallowed account '~s' to added numbers~n", [AccountId]);
-        {'error', Reason} ->
-            io:format("failed to find account: ~p~n", [Reason]),
-            'failed'
-    end.
+    wh_util:set_allow_number_additions(AccountId, 'false').
 
 %%--------------------------------------------------------------------
 %% @public
@@ -306,13 +309,7 @@ disallow_account_number_additions(AccountId) ->
 %%--------------------------------------------------------------------
 -spec enable_account(input_term()) -> 'ok' | 'failed'.
 enable_account(AccountId) ->
-    case update_account(AccountId, <<"pvt_enabled">>, 'true') of
-        {'ok', _} ->
-            io:format("enabled account '~s'~n", [AccountId]);
-        {'error', Reason} ->
-            io:format("failed to enable account: ~p~n", [Reason]),
-            'failed'
-    end.
+    wh_util:enable_account(AccountId).
 
 %%--------------------------------------------------------------------
 %% @public
@@ -322,13 +319,7 @@ enable_account(AccountId) ->
 %%--------------------------------------------------------------------
 -spec disable_account(input_term()) -> 'ok' | 'failed'.
 disable_account(AccountId) ->
-    case update_account(AccountId, <<"pvt_enabled">>, 'false') of
-        {'ok', _} ->
-            io:format("disabled account '~s'~n", [AccountId]);
-        {'error', Reason} ->
-            io:format("failed to disable account: ~p~n", [Reason]),
-            'failed'
-    end.
+    wh_util:disable_account(AccountId).
 
 %%--------------------------------------------------------------------
 %% @public
@@ -338,13 +329,7 @@ disable_account(AccountId) ->
 %%--------------------------------------------------------------------
 -spec promote_account(input_term()) -> 'ok' | 'failed'.
 promote_account(AccountId) ->
-    case update_account(AccountId, <<"pvt_superduper_admin">>, 'true') of
-        {'ok', _} ->
-            io:format("promoted account '~s', this account now has permission to change system settings~n", [AccountId]);
-        {'error', Reason} ->
-            io:format("failed to promote account: ~p~n", [Reason]),
-            'failed'
-    end.
+    wh_util:set_superduper_admin(AccountId, 'true').
 
 %%--------------------------------------------------------------------
 %% @public
@@ -354,13 +339,7 @@ promote_account(AccountId) ->
 %%--------------------------------------------------------------------
 -spec demote_account(input_term()) -> 'ok' | 'failed'.
 demote_account(AccountId) ->
-    case update_account(AccountId, <<"pvt_superduper_admin">>, 'false') of
-        {'ok', _} ->
-            io:format("promoted account '~s', this account can no longer change system settings~n", [AccountId]);
-        {'error', Reason} ->
-            io:format("failed to demote account: ~p~n", [Reason]),
-            'failed'
-    end.
+    wh_util:set_superduper_admin(AccountId, 'false').
 
 %%--------------------------------------------------------------------
 %% @public
@@ -521,38 +500,6 @@ create_user(Context) ->
             io:format("failed to create account admin user: '~s'~n", [wh_json:encode(Errors)]),
             {'error', Errors}
     end.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%%
-%% @end
-%%--------------------------------------------------------------------
--spec update_account(input_term(), ne_binary(), _) ->
-                            {'ok', wh_json:object()} |
-                            {'error', _}.
-update_account(AccountId, Key, Value) when not is_binary(AccountId) ->
-    update_account(wh_util:to_binary(AccountId), Key, Value);
-update_account(AccountId, Key, Value) ->
-    Updaters = [fun({'error', _}=E) -> E;
-                   ({'ok', J}) ->
-                        AccountDb = wh_util:format_account_id(AccountId, 'encoded'),
-                        couch_mgr:save_doc(AccountDb, wh_json:set_value(Key, Value, J))
-                end
-                ,fun({'error', _}=E) -> E;
-                    ({'ok', J}) ->
-                         case couch_mgr:lookup_doc_rev(?WH_ACCOUNTS_DB, AccountId) of
-                             {'ok', Rev} ->
-                                 couch_mgr:save_doc(?WH_ACCOUNTS_DB, wh_doc:set_revision(J, Rev));
-                             {'error', 'not_found'} ->
-                                 couch_mgr:save_doc(?WH_ACCOUNTS_DB, wh_doc:delete_revision(J))
-                         end
-                 end
-               ],
-    lists:foldl(fun(F, J) -> F(J) end
-                ,kz_account:fetch(AccountId)
-                ,Updaters
-               ).
 
 -spec print_account_info(ne_binary()) -> {'ok', ne_binary()}.
 -spec print_account_info(ne_binary(), ne_binary()) -> {'ok', ne_binary()}.
@@ -854,16 +801,17 @@ maybe_create_app(AppPath, MetaData, MasterAccountDb) ->
 -spec maybe_update_app(file:filename(), wh_json:object(), ne_binary(), wh_json:object()) -> 'ok'.
 maybe_update_app(AppPath, MetaData, MasterAccountDb, JObj) ->
     CurrentDocId  = wh_doc:id(JObj),
-    CurrentApiUrl = wh_json:get_value([<<"value">>, <<"api_url">>], JObj),
+    ApiUrlKey = <<"api_url">>,
+    CurrentApiUrl = wh_json:get_value([<<"value">>, ApiUrlKey], JObj),
 
-    case wh_json:get_value(<<"api_url">>, MetaData) of
-	'undefined'   -> io:format(" not updating api_url, it is undefined~n");
-	CurrentApiUrl -> io:format(" not updating api_url, it is unchanged~n");
+    case wh_json:get_value(ApiUrlKey, MetaData) of
+	'undefined'   -> io:format(" not updating ~s, it is undefined~n", [ApiUrlKey]);
+	CurrentApiUrl -> io:format(" not updating ~s, it is unchanged~n", [ApiUrlKey]);
 	NewApiUrl ->
-	    Update = [{<<"api_url">>, NewApiUrl}],
+	    Update = [{ApiUrlKey, NewApiUrl}],
 	    case couch_mgr:update_doc(MasterAccountDb, CurrentDocId, Update) of
-		{'ok', _NJObj} -> io:format(" updated api_url to ~s~n", [NewApiUrl]);
-		{'error', Err} -> io:format(" error updating api_url: ~p~n", [Err])
+		{'ok', _NJObj} -> io:format(" updated ~s to ~s~n", [ApiUrlKey, NewApiUrl]);
+		{'error', Err} -> io:format(" error updating ~s: ~p~n", [ApiUrlKey, Err])
 	    end
     end,
 
@@ -872,7 +820,7 @@ maybe_update_app(AppPath, MetaData, MasterAccountDb, JObj) ->
 
 -spec find_app(ne_binary(), ne_binary()) ->
                       {'ok', wh_json:object()} |
-                      {'error', _}.
+                      {'error', any()}.
 find_app(Db, Name) ->
     case couch_mgr:get_results(Db, ?CB_APPS_STORE_LIST, [{'key', Name}]) of
         {'ok', []} -> {'error', 'not_found'};
@@ -932,7 +880,7 @@ maybe_add_images(AppPath, AppId, MetaData, MasterAccountDb) ->
 -type image_path() :: {wh_json:object(), file:filename()}.
 -type image_paths() :: [image_path()].
 
--spec update_images(file:filename(), ne_binary(), image_paths(), ne_binary()) -> 'ok'.
+-spec update_images(ne_binary(), ne_binary(), image_paths(), ne_binary()) -> 'ok'.
 update_images(AppId, MasterAccountDb, ImagePaths, Type) ->
     try read_images(ImagePaths) of
         {'ok', Images} -> add_images(AppId, MasterAccountDb, Images)
@@ -957,7 +905,7 @@ add_image(AppId, MasterAccountDb, ImageId, ImageData) ->
         {'error', _E} -> io:format("   failed to save ~s to ~s: ~p~n", [ImageId, AppId, _E])
     end.
 
--spec read_images(list(file:filename())) -> {'ok', [{file:filename(), binary()}]}.
+-spec read_images([file:filename()]) -> {'ok', [{file:filename(), binary()}]}.
 read_images(Images) ->
     {'ok', [{Image, read_image(ImagePath)}
             || {Image, ImagePath} <- Images

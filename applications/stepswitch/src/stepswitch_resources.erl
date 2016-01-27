@@ -16,8 +16,17 @@
         ]).
 
 -include("stepswitch.hrl").
+-include_lib("whistle/src/wh_json.hrl").
 
 -define(CONFIG_CAT, <<"number_manager">>).
+
+-define(DEFAULT_ROUTE, whapps_config:get_binary(?SS_CONFIG_CAT, <<"default_route">>)).
+-define(DEFAULT_PREFIX, whapps_config:get_binary(?SS_CONFIG_CAT, <<"default_prefix">>, <<>>)).
+-define(DEFAULT_SUFFIX, whapps_config:get_binary(?SS_CONFIG_CAT, <<"default_suffix">>, <<>>)).
+-define(DEFAULT_CALLER_ID_TYPE,
+        whapps_config:get_binary(?SS_CONFIG_CAT, <<"default_caller_id_type">>, <<"external">>)).
+-define(DEFAULT_PROGRESS_TIMEOUT,
+        whapps_config:get_integer(?SS_CONFIG_CAT, <<"default_progress_timeout">>, 8)).
 
 -record(gateway, {
            server :: api_binary()
@@ -69,10 +78,10 @@
          }).
 
 -type resource() :: #resrc{}.
--type resources() :: [#resrc{},...] | [].
+-type resources() :: [#resrc{}].
 
 -type gateway() :: #gateway{}.
--type gateways() :: [#gateway{},...] | [].
+-type gateways() :: [#gateway{}].
 
 -compile({'no_auto_import', [get/0, get/1]}).
 
@@ -131,23 +140,23 @@ sort_resources(Resources) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec endpoints(ne_binary(), wh_json:object()) -> wh_json:objects().
-endpoints(Number, JObj) ->
-    case maybe_get_endpoints(Number, JObj) of
+-spec endpoints(ne_binary(), wapi_offnet_resource:req()) -> wh_json:objects().
+endpoints(Number, OffnetJObj) ->
+    case maybe_get_endpoints(Number, OffnetJObj) of
         [] -> [];
         Endpoints -> sort_endpoints(Endpoints)
     end.
 
--spec maybe_get_endpoints(ne_binary(), wh_json:object()) -> wh_json:objects().
-maybe_get_endpoints(Number, JObj) ->
-    case wh_json:get_value(<<"Hunt-Account-ID">>, JObj) of
-        'undefined' -> get_global_endpoints(Number, JObj);
-        HuntAccount -> maybe_get_local_endpoints(HuntAccount, Number, JObj)
+-spec maybe_get_endpoints(ne_binary(), wapi_offnet_resource:req()) -> wh_json:objects().
+maybe_get_endpoints(Number, OffnetJObj) ->
+    case wapi_offnet_resource:hunt_account_id(OffnetJObj) of
+        'undefined' -> get_global_endpoints(Number, OffnetJObj);
+        HuntAccount -> maybe_get_local_endpoints(HuntAccount, Number, OffnetJObj)
     end.
 
--spec maybe_get_local_endpoints(ne_binary(), ne_binary(), wh_json:object()) -> wh_json:objects().
-maybe_get_local_endpoints(HuntAccount, Number, JObj) ->
-    AccountId = wh_json:get_value(<<"Account-ID">>, JObj),
+-spec maybe_get_local_endpoints(ne_binary(), ne_binary(), wapi_offnet_resource:req()) -> wh_json:objects().
+maybe_get_local_endpoints(HuntAccount, Number, OffnetJObj) ->
+    AccountId = wapi_offnet_resource:account_id(OffnetJObj),
     case wh_util:is_in_account_hierarchy(HuntAccount, AccountId, 'true') of
         'false' ->
             lager:info("account ~s attempted to use local resources of ~s, but it is not allowed"
@@ -156,22 +165,22 @@ maybe_get_local_endpoints(HuntAccount, Number, JObj) ->
             [];
         'true' ->
             lager:info("account ~s is using the local resources of ~s", [AccountId, HuntAccount]),
-            get_local_endpoints(HuntAccount, Number, JObj)
+            get_local_endpoints(HuntAccount, Number, OffnetJObj)
     end.
 
--spec get_local_endpoints(ne_binary(), ne_binary(), wh_json:object()) -> wh_json:objects().
-get_local_endpoints(AccountId, Number, JObj) ->
+-spec get_local_endpoints(ne_binary(), ne_binary(), wapi_offnet_resource:req()) -> wh_json:objects().
+get_local_endpoints(AccountId, Number, OffnetJObj) ->
     lager:debug("attempting to find local resources for ~s", [AccountId]),
-    Flags = wh_json:get_value(<<"Flags">>, JObj, []),
+    Flags = wapi_offnet_resource:flags(OffnetJObj, []),
     Resources = filter_resources(Flags, get(AccountId)),
-    resources_to_endpoints(Resources, Number, JObj).
+    resources_to_endpoints(Resources, Number, OffnetJObj).
 
--spec get_global_endpoints(ne_binary(), wh_json:object()) -> wh_json:objects().
-get_global_endpoints(Number, JObj) ->
+-spec get_global_endpoints(ne_binary(), wapi_offnet_resource:req()) -> wh_json:objects().
+get_global_endpoints(Number, OffnetJObj) ->
     lager:debug("attempting to find global resources"),
-    Flags = wh_json:get_value(<<"Flags">>, JObj, []),
+    Flags = wapi_offnet_resource:flags(OffnetJObj, []),
     Resources = filter_resources(Flags, get()),
-    resources_to_endpoints(Resources, Number, JObj).
+    resources_to_endpoints(Resources, Number, OffnetJObj).
 
 -spec sort_endpoints(wh_json:objects()) -> wh_json:objects().
 sort_endpoints(Endpoints) ->
@@ -345,9 +354,8 @@ filter_resources(Flags, [Resource|Resources], Filtered) ->
 
 -spec resource_has_flags(ne_binaries(), resource()) -> boolean().
 resource_has_flags(Flags, Resource) ->
-    lists:all(fun(Flag) -> resource_has_flag(Flag, Resource) end
-              ,Flags
-             ).
+    HasFlag = fun(Flag) -> resource_has_flag(Flag, Resource) end,
+    lists:all(HasFlag, Flags).
 
 -spec resource_has_flag(ne_binary(), resource()) -> boolean().
 resource_has_flag(Flag, #resrc{flags=ResourceFlags, id=_Id}) ->
@@ -368,20 +376,20 @@ resource_has_flag(Flag, #resrc{flags=ResourceFlags, id=_Id}) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec resources_to_endpoints(resources(), ne_binary(), wh_json:object()) ->
+-spec resources_to_endpoints(resources(), ne_binary(), wapi_offnet_resource:req()) ->
                                     wh_json:objects().
--spec resources_to_endpoints(resources(), ne_binary(), wh_json:object(), wh_json:objects()) ->
+-spec resources_to_endpoints(resources(), ne_binary(), wapi_offnet_resource:req(), wh_json:objects()) ->
                                     wh_json:objects().
-resources_to_endpoints(Resources, Number, JObj) ->
-    resources_to_endpoints(Resources, Number, JObj, []).
+resources_to_endpoints(Resources, Number, OffnetJObj) ->
+    resources_to_endpoints(Resources, Number, OffnetJObj, []).
 
-resources_to_endpoints([], _, _, Endpoints) ->
+resources_to_endpoints([], _Number, _OffnetJObj, Endpoints) ->
     lists:reverse(Endpoints);
-resources_to_endpoints([Resource|Resources], Number, JObj, Endpoints) ->
-    MoreEndpoints = maybe_resource_to_endpoints(Resource, Number, JObj, Endpoints),
-    resources_to_endpoints(Resources, Number, JObj, MoreEndpoints).
+resources_to_endpoints([Resource|Resources], Number, OffnetJObj, Endpoints) ->
+    MoreEndpoints = maybe_resource_to_endpoints(Resource, Number, OffnetJObj, Endpoints),
+    resources_to_endpoints(Resources, Number, OffnetJObj, MoreEndpoints).
 
--spec maybe_resource_to_endpoints(resource(), ne_binary(), wh_json:object(), wh_json:objects()) ->
+-spec maybe_resource_to_endpoints(resource(), ne_binary(), wapi_offnet_resource:req(), wh_json:objects()) ->
                                          wh_json:objects().
 maybe_resource_to_endpoints(#resrc{id=Id
                                    ,name=Name
@@ -392,8 +400,14 @@ maybe_resource_to_endpoints(#resrc{id=Id
                                    ,weight=Weight
                                    ,proxies=Proxies
                                   }
-                            ,Number, JObj, Endpoints) ->
-    CallerIdNumber = wh_json:get_value(<<"Outbound-Caller-ID-Number">>,JObj),
+                            ,Number
+                            ,OffnetJObj
+                            ,Endpoints
+                           ) ->
+    CallerIdNumber = case ?RULES_HONOR_DIVERSION of
+                         'false' -> wapi_offnet_resource:outbound_caller_id_number(OffnetJObj);
+                         'true' -> check_diversion_fields(OffnetJObj)
+                     end,
     case filter_resource_by_rules(Id, Number, Rules, CallerIdNumber, CallerIdRules) of
         {'error','no_match'} -> Endpoints;
         {'ok', NumberMatch} ->
@@ -401,19 +415,67 @@ maybe_resource_to_endpoints(#resrc{id=Id
             CCVUpdates = [{<<"Global-Resource">>, wh_util:to_binary(Global)}
                           ,{<<"Resource-ID">>, Id}
                           ,{<<"E164-Destination">>, Number}
+                          ,{<<"Original-Number">>, wapi_offnet_resource:to_did(OffnetJObj)}
                          ],
             Updates = [{<<"Name">>, Name}
                        ,{<<"Weight">>, Weight}
                       ],
-            EndpointList = [update_endpoint(Endpoint, Updates, CCVUpdates)
-                            || Endpoint <- gateways_to_endpoints(NumberMatch, Gateways, JObj, [])
+            EndpointList = [update_endpoint(Endpoint, Updates, CCVUpdates, OffnetJObj)
+                            || Endpoint <- gateways_to_endpoints(NumberMatch, Gateways, OffnetJObj, [])
                            ],
             maybe_add_proxies(EndpointList, Proxies, Endpoints)
     end.
 
--spec update_endpoint(wh_json:object(), wh_proplist(), wh_proplist()) -> wh_json:object().
-update_endpoint(Endpoint, Updates, CCVUpdates) ->
-    wh_json:set_values(Updates ,update_ccvs(Endpoint, CCVUpdates)).
+-spec check_diversion_fields(wapi_offnet_resource:req()) -> ne_binary().
+check_diversion_fields(OffnetJObj) ->
+    case wh_json:get_value([<<"Custom-SIP-Headers">>,<<"Diversions">>], OffnetJObj) of
+        [Diversion|_] ->
+            [_,CallerIdNumber,_] = binary:split(Diversion, [<<":">>,<<"@">>], ['global']),
+            CallerIdNumber;
+        _ ->
+            wapi_offnet_resource:outbound_caller_id_number(OffnetJObj)
+    end.
+
+-spec update_endpoint(wh_json:object(), wh_proplist(), wh_proplist(), wapi_offnet_resource:req()) -> wh_json:object().
+update_endpoint(Endpoint, Updates, CCVUpdates, OffnetJObj) ->
+    Updated = wh_json:set_values(Updates ,update_ccvs(Endpoint, CCVUpdates)),
+    maybe_apply_formatters(Updated, OffnetJObj).
+
+-spec maybe_apply_formatters(wh_json:object(), wapi_offnet_resource:req()) -> wh_json:object().
+maybe_apply_formatters(Endpoint, OffnetJObj) ->
+    SIPHeaders = stepswitch_util:get_sip_headers(OffnetJObj),
+    AccountId = wapi_offnet_resource:account_id(OffnetJObj),
+
+    stepswitch_formatters:apply(maybe_add_sip_headers(Endpoint, SIPHeaders)
+                                ,props:get_value(<<"Formatters">>
+                                                 ,endpoint_props(Endpoint, AccountId)
+                                                 ,wh_json:new()
+                                                )
+                                ,'outbound'
+                               ).
+
+-spec maybe_add_sip_headers(wh_json:object(), wh_json:object()) -> wh_json:object().
+maybe_add_sip_headers(Endpoint, SIPHeaders) ->
+    LocalSIPHeaders = wh_json:get_value(<<"Custom-SIP-Headers">>, Endpoint, wh_json:new()),
+
+    case wh_json:merge_jobjs(SIPHeaders, LocalSIPHeaders) of
+        ?EMPTY_JSON_OBJECT -> Endpoint;
+        MergedHeaders -> wh_json:set_value(<<"Custom-SIP-Headers">>, MergedHeaders, Endpoint)
+    end.
+
+-spec endpoint_props(wh_json:object(), api_binary()) -> wh_proplist().
+endpoint_props(Endpoint, AccountId) ->
+    ResourceId = wh_json:get_value(?CCV(<<"Resource-ID">>), Endpoint),
+    case wh_json:is_true(?CCV(<<"Global-Resource">>), Endpoint) of
+        'true' ->
+            empty_list_on_undefined(stepswitch_resources:get_props(ResourceId));
+        'false' ->
+            empty_list_on_undefined(stepswitch_resources:get_props(ResourceId, AccountId))
+    end.
+
+-spec empty_list_on_undefined(wh_proplist() | 'undefined') -> wh_proplist().
+empty_list_on_undefined('undefined') -> [];
+empty_list_on_undefined(L) -> L.
 
 -spec maybe_add_proxies(wh_json:objects(), wh_proplist(), wh_json:objects()) -> wh_json:objects().
 maybe_add_proxies([], _, Acc) -> Acc;
@@ -460,9 +522,9 @@ filter_resource_by_match(Id, Number, CallerIdNumber, CallerIdRules, Match) ->
     end.
 
 -spec update_ccvs(wh_json:object(), wh_proplist()) -> wh_json:object().
-update_ccvs(JObj, Updates) ->
-    CCVs = wh_json:get_value(<<"Custom-Channel-Vars">>, JObj, wh_json:new()),
-    wh_json:set_value(<<"Custom-Channel-Vars">>, wh_json:set_values(Updates, CCVs), JObj).
+update_ccvs(Endpoint, Updates) ->
+    CCVs = wh_json:get_value(<<"Custom-Channel-Vars">>, Endpoint, wh_json:new()),
+    wh_json:set_value(<<"Custom-Channel-Vars">>, wh_json:set_values(Updates, CCVs), Endpoint).
 
 -spec evaluate_rules(re:mp(), ne_binary()) ->
                             {'ok', ne_binary()} |
@@ -493,16 +555,18 @@ evaluate_cid_rules(CIDRules, CIDNumber) -> evaluate_rules(CIDRules, CIDNumber).
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec gateways_to_endpoints(ne_binary(), gateways(), wh_json:object(), wh_json:objects()) ->
+-spec gateways_to_endpoints(ne_binary(), gateways(), wapi_offnet_resource:req(), wh_json:objects()) ->
                                    wh_json:objects().
-gateways_to_endpoints(_, [], _, Endpoints) -> Endpoints;
-gateways_to_endpoints(Number, [Gateway|Gateways], JObj, Endpoints) ->
-    gateways_to_endpoints(Number, Gateways, JObj
-                          ,[gateway_to_endpoint(Number, Gateway, JObj) | Endpoints]
+gateways_to_endpoints(_Number, [], _OffnetJObj, Endpoints) -> Endpoints;
+gateways_to_endpoints(Number, [Gateway|Gateways], OffnetJObj, Endpoints) ->
+    gateways_to_endpoints(Number
+                          ,Gateways
+                          ,OffnetJObj
+                          ,[gateway_to_endpoint(Number, Gateway, OffnetJObj) | Endpoints]
                          ).
 
--spec gateway_to_endpoint(ne_binary(), gateway(), wh_json:object()) ->
-                                wh_json:object().
+-spec gateway_to_endpoint(ne_binary(), gateway(), wapi_offnet_resource:req()) ->
+                                 wh_json:object().
 gateway_to_endpoint(Number
                     ,#gateway{invite_format=InviteFormat
                               ,caller_id_type=CallerIdType
@@ -516,11 +580,11 @@ gateway_to_endpoint(Number
                               ,endpoint_options=EndpointOptions
                               ,progress_timeout=ProgressTimeout
                              }=Gateway
-                    ,JObj
+                    ,OffnetJObj
                    ) ->
     CCVs = props:filter_empty(
              [{<<"Emergency-Resource">>, gateway_emergency_resource(Gateway)}
-              ,{<<"Original-Number">>, Number}
+              ,{<<"Matched-Number">>, Number}
               | gateway_from_uri_settings(Gateway)
              ]),
     wh_json:from_list(
@@ -541,7 +605,9 @@ gateway_to_endpoint(Number
          ,{<<"Endpoint-Options">>, EndpointOptions}
          ,{<<"Endpoint-Progress-Timeout">>, wh_util:to_binary(ProgressTimeout)}
          ,{<<"Custom-Channel-Vars">>, wh_json:from_list(CCVs)}
-         | maybe_get_t38(Gateway, JObj)
+         ,{<<"Outbound-Caller-ID-Number">>, wapi_offnet_resource:outbound_caller_id_number(OffnetJObj)}
+         ,{<<"Outbound-Caller-ID-Name">>, wapi_offnet_resource:outbound_caller_id_name(OffnetJObj)}
+         | maybe_get_t38(Gateway, OffnetJObj)
         ])).
 
 -spec gateway_from_uri_settings(gateway()) -> wh_proplist().
@@ -564,15 +630,15 @@ gateway_from_uri_settings(#gateway{format_from_uri='false'
      ,{<<"From-URI-Realm">>, Realm}
     ].
 
--spec maybe_get_t38(gateway(), wh_json:object()) -> wh_proplist().
-maybe_get_t38(#gateway{fax_option=FaxOption}, JObj) ->
-    Flags = wh_json:get_value(<<"Flags">>, JObj, []),
+-spec maybe_get_t38(gateway(), wapi_offnet_resource:req()) -> wh_proplist().
+maybe_get_t38(#gateway{fax_option=FaxOption}, OffnetJObj) ->
+    Flags = wapi_offnet_resource:flags(OffnetJObj, []),
     case lists:member(<<"fax">>, Flags) of
         'false' -> [];
         'true' ->
             whapps_call_command:get_outbound_t38_settings(
               FaxOption
-              ,wh_json:get_value(<<"Fax-T38-Enabled">>, JObj)
+              ,wapi_offnet_resource:t38_enabled(OffnetJObj)
              )
     end.
 
@@ -639,7 +705,7 @@ fetch_global_resources() ->
             lager:warning("unable to fetch global resources: ~p", [_R]),
             [];
         {'ok', JObjs} ->
-            CacheProps = [{'origin', fetch_cache_origin(JObjs, ?RESOURCES_DB)}],
+            CacheProps = [{'origin', [{'db', ?RESOURCES_DB, <<"resource">>}]}],
             Docs = [wh_json:get_value(<<"doc">>, JObj) || JObj <- JObjs],
             Resources = resources_from_jobjs(Docs),
             wh_cache:store_local(?STEPSWITCH_CACHE, 'global_resources', Resources, CacheProps),
@@ -663,7 +729,7 @@ fetch_local_resources(AccountId) ->
             [];
         {'ok', JObjs} ->
             LocalResources = fetch_local_resources(AccountId, JObjs),
-            CacheProps = [{'origin', fetch_cache_origin(JObjs, AccountDb)}],
+            CacheProps = [{'origin', [{'db', AccountDb, <<"resource">>}]}],
             wh_cache:store_local(?STEPSWITCH_CACHE, {'local_resources', AccountId}, LocalResources, CacheProps),
             LocalResources
     end.
@@ -693,21 +759,6 @@ build_account_dedicated_proxy(Proxy) ->
     Zone = wh_json:get_value(<<"zone">>, Proxy),
     ProxyIP = wh_json:get_value(<<"ip">>, Proxy),
     {Zone, ProxyIP}.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%%
-%% @end
-%%--------------------------------------------------------------------
--type cache_property() :: tuple('db', ne_binary(), ne_binary()).
--type wh_cache_props() :: [cache_property(),...] | [].
-
--spec fetch_cache_origin(wh_json:objects(), ne_binary()) -> wh_cache_props().
-fetch_cache_origin(JObjs, Database) ->
-    [{'db', Database, wh_doc:id(JObj)}
-     || JObj <- JObjs
-    ].
 
 %%--------------------------------------------------------------------
 %% @private
@@ -798,7 +849,7 @@ create_classifier_gateways(Resource, ClassifierJObj) ->
 %% @end
 %%--------------------------------------------------------------------
 -type rule() :: re:mp().
--type rules() :: [rule(),...] | [].
+-type rules() :: [rule()].
 
 -spec resource_from_jobj(wh_json:object()) -> resource().
 resource_from_jobj(JObj) ->
@@ -930,54 +981,29 @@ gateway_from_jobj(JObj, #resrc{is_emergency=IsEmergency
                                ,bypass_media=BypassMedia
                               }) ->
     EndpointType = wh_json:get_ne_value(<<"endpoint_type">>, JObj, <<"sip">>),
-    #gateway{endpoint_type=EndpointType
-             ,server=wh_json:get_value(<<"server">>, JObj)
-             ,port=wh_json:get_integer_value(<<"port">>, JObj)
-             ,realm=wh_json:get_value(<<"realm">>, JObj)
-             ,username=wh_json:get_value(<<"username">>, JObj)
-             ,password=wh_json:get_value(<<"password">>, JObj)
-             ,sip_headers=wh_json:get_ne_value(<<"custom_sip_headers">>, JObj)
-             ,sip_interface=wh_json:get_ne_value(<<"custom_sip_interface">>, JObj)
-             ,invite_format=wh_json:get_value(<<"invite_format">>, JObj, <<"route">>)
-             ,format_from_uri=wh_json:is_true(<<"format_from_uri">>, JObj, FormatFrom)
-             ,from_uri_realm=wh_json:get_ne_value(<<"from_uri_realm">>, JObj, FromRealm)
-             ,is_emergency=wh_json:is_true(<<"emergency">>, JObj, IsEmergency)
-             ,fax_option=wh_json:is_true([<<"media">>, <<"fax_option">>], JObj, T38)
-             ,codecs=wh_json:get_value(<<"codecs">>, JObj, Codecs)
-             ,bypass_media=wh_json:is_true(<<"bypass_media">>, JObj, BypassMedia)
-             ,force_port=wh_json:is_true(<<"force_port">>, JObj)
-             ,route=gateway_route(JObj)
-             ,prefix=gateway_prefix(JObj)
-             ,suffix=gateway_suffix(JObj)
-             ,caller_id_type=gateway_caller_id_type(JObj)
-             ,progress_timeout=gateway_progress_timeout(JObj)
-             ,endpoint_options=endpoint_options(JObj, EndpointType)
+    #gateway{endpoint_type = EndpointType
+             ,server = wh_json:get_ne_binary_value(<<"server">>, JObj)
+             ,port = wh_json:get_integer_value(<<"port">>, JObj)
+             ,realm = wh_json:get_value(<<"realm">>, JObj)
+             ,username = wh_json:get_value(<<"username">>, JObj)
+             ,password = wh_json:get_value(<<"password">>, JObj)
+             ,sip_headers = wh_json:get_ne_value(<<"custom_sip_headers">>, JObj)
+             ,sip_interface = wh_json:get_ne_value(<<"custom_sip_interface">>, JObj)
+             ,invite_format = wh_json:get_value(<<"invite_format">>, JObj, <<"route">>)
+             ,format_from_uri = wh_json:is_true(<<"format_from_uri">>, JObj, FormatFrom)
+             ,from_uri_realm = wh_json:get_ne_value(<<"from_uri_realm">>, JObj, FromRealm)
+             ,is_emergency = wh_json:is_true(<<"emergency">>, JObj, IsEmergency)
+             ,fax_option = wh_json:is_true([<<"media">>, <<"fax_option">>], JObj, T38)
+             ,codecs = wh_json:get_value(<<"codecs">>, JObj, Codecs)
+             ,bypass_media = wh_json:is_true(<<"bypass_media">>, JObj, BypassMedia)
+             ,force_port = wh_json:is_true(<<"force_port">>, JObj)
+             ,route = wh_json:get_ne_value(<<"route">>, JObj, ?DEFAULT_ROUTE)
+             ,prefix = wh_json:get_binary_value(<<"prefix">>, JObj, ?DEFAULT_PREFIX)
+             ,suffix = wh_json:get_binary_value(<<"suffix">>, JObj, ?DEFAULT_SUFFIX)
+             ,caller_id_type = wh_json:get_ne_value(<<"caller_id_type">>, JObj, ?DEFAULT_CALLER_ID_TYPE)
+             ,progress_timeout = wh_json:get_integer_value(<<"progress_timeout">>, JObj, ?DEFAULT_PROGRESS_TIMEOUT)
+             ,endpoint_options = endpoint_options(JObj, EndpointType)
             }.
-
--spec gateway_route(wh_json:object()) -> api_binary().
-gateway_route(JObj) ->
-    Default = whapps_config:get_binary(?SS_CONFIG_CAT, <<"default_route">>),
-    wh_json:get_ne_value(<<"route">>, JObj, Default).
-
--spec gateway_prefix(wh_json:object()) -> binary().
-gateway_prefix(JObj) ->
-    Default = whapps_config:get_binary(?SS_CONFIG_CAT, <<"default_prefix">>, <<>>),
-    wh_json:get_binary_value(<<"prefix">>, JObj, Default).
-
--spec gateway_suffix(wh_json:object()) -> binary().
-gateway_suffix(JObj) ->
-    Default = whapps_config:get_binary(?SS_CONFIG_CAT, <<"default_suffix">>, <<>>),
-    wh_json:get_binary_value(<<"suffix">>, JObj, Default).
-
--spec gateway_caller_id_type(wh_json:object()) -> ne_binary().
-gateway_caller_id_type(JObj) ->
-    Default = whapps_config:get_binary(?SS_CONFIG_CAT, <<"default_caller_id_type">>, <<"external">>),
-    wh_json:get_ne_value(<<"caller_id_type">>, JObj, Default).
-
--spec gateway_progress_timeout(wh_json:object()) -> integer().
-gateway_progress_timeout(JObj) ->
-    Default = whapps_config:get_integer(?SS_CONFIG_CAT, <<"default_progress_timeout">>, 8),
-    wh_json:get_integer_value(<<"progress_timeout">>, JObj, Default).
 
 -spec endpoint_options(wh_json:object(), api_binary()) -> wh_json:object().
 endpoint_options(JObj, <<"freetdm">>) ->
@@ -1028,24 +1054,18 @@ endpoint_options(_, _) -> wh_json:new().
 gateway_dialstring(#gateway{route='undefined'
                             ,prefix=Prefix
                             ,suffix=Suffix
-                           ,server=Server
+                            ,server=Server
                             ,port=Port
                            }, Number) ->
     DialStringPort =
-        case wh_util:is_not_empty(Port)
+        case not wh_util:is_empty(Port)
             andalso Port =/= 5060
         of
             'true' -> <<":", (wh_util:to_binary(Port))/binary>>;
             'false' -> <<>>
         end,
-    Route = list_to_binary(["sip:"
-                            ,wh_util:to_binary(Prefix)
-                            ,Number
-                            ,wh_util:to_binary(Suffix)
-                            ,"@"
-                            ,wh_util:to_binary(Server)
-                            ,wh_util:to_binary(DialStringPort)
-                           ]),
+    Route =
+        list_to_binary(["sip:", Prefix, Number, Suffix, "@", Server, DialStringPort]),
     lager:debug("created gateway route ~s", [Route]),
     Route;
 gateway_dialstring(#gateway{route=Route}, _) ->

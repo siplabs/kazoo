@@ -90,20 +90,21 @@ create_discovery(#number{number=Number
 -spec create_available(wnm_number()) -> wnm_number().
 create_available(#number{auth_by='undefined'}=N) ->
     error_unauthorized(N);
-create_available(#number{number=Number
-                         ,auth_by=AuthBy
-                         ,number_doc=Doc
-                         ,module_name=ModName
+create_available(#number{number = Number
+                         ,auth_by = AuthBy
+                         ,number_doc = Doc
+                         ,module_name = ModName
+                         ,assign_to = Account
                         }=N) ->
     Num = wnm_util:normalize_number(Number),
-    ModuleName = module_name(ModName),
     Updates = [{<<"_id">>, Num}
-               ,{<<"pvt_module_name">>, ModuleName}
+               ,{<<"pvt_module_name">>, module_name(ModName)}
                ,{<<"pvt_module_data">>, wh_json:new()}
                ,{?PVT_NUMBER_STATE, ?NUMBER_STATE_AVAILABLE}
                ,{<<"pvt_db_name">>, wnm_util:number_to_db_name(Num)}
                ,{<<"pvt_created">>, wh_util:current_tstamp()}
                ,{<<"pvt_authorizing_account">>, AuthBy}
+               ,{<<"pvt_resource_db">>, wh_util:format_account_id(Account, 'encoded')}
               ],
     JObj = wh_json:set_values(Updates, wh_json:public_fields(Doc)),
     json_to_record(JObj, 'true', N).
@@ -847,7 +848,7 @@ record_to_json_fold({K, V}, J) -> wh_json:set_value(K, V, J).
 %% conditionally merge the public fields with a number record
 %% @end
 %%--------------------------------------------------------------------
--spec merge_public_fields(_, wnm_number()) -> wnm_number().
+-spec merge_public_fields(any(), wnm_number()) -> wnm_number().
 merge_public_fields(PublicFields, #number{number_doc=JObj}=N) ->
     case wh_json:is_json_object(PublicFields) of
         'false' -> N;
@@ -922,7 +923,7 @@ delete_number_doc(#number{number_db=Db
 %%--------------------------------------------------------------------
 -spec resolve_account_phone_numbers_conflict(wh_json:object(), ne_binary(), ne_binary()) ->
                                                     {'ok', wh_json:object()} |
-                                                    {'error', _}.
+                                                    {'error', any()}.
 resolve_account_phone_numbers_conflict(JObj, Num, AccountDb) ->
     case couch_mgr:open_cache_doc(AccountDb, ?WNM_PHONE_NUMBER_DOC) of
         {'error', _R}=E ->
@@ -958,20 +959,19 @@ exec_providers([Provider|Providers], Action, Number) ->
         Mod ->
             case apply(Mod, Action, [Number]) of
                 #number{}=N ->
-                    lager:debug("successfully attempted ~s:~s/1", [Mod, Action]),
                     exec_providers(Providers, Action, N);
                 {'error', Reason} ->
                     lager:debug("failed attempting ~s:~s/1: ~p", [Mod, Action, Reason]),
                     Error = wh_json:from_list([{Provider, Reason}]),
-                    wnm_number:error_provider_fault(Error, Number);
+                    ?MODULE:error_provider_fault(Error, Number);
                 {'invalid', Data} ->
                     lager:debug("failed attempting ~s:~s/1: ~p", [Mod, Action, Data]),
                     Error = wh_json:set_value(<<"provider">>, Provider, Data),
-                    wnm_number:error_user_fault(Error, Number);
+                    ?MODULE:error_user_fault(Error, Number);
                 {'multiple_choice', Update} ->
                     lager:debug("update sent by ~s", [Mod]),
                     Error = wh_json:from_list([{Provider, Update}]),
-                    wnm_number:error_provider_update(Error, Number)
+                    ?MODULE:error_provider_update(Error, Number)
             end
     end.
 
@@ -1171,7 +1171,7 @@ update_phone_number_doc(Account, #number{number=Num
 %%--------------------------------------------------------------------
 -spec get_phone_number_doc(ne_binary(), wnm_number()) ->
                                   {'ok', wh_json:object()} |
-                                  {'error', _}.
+                                  {'error', any()}.
 get_phone_number_doc(Account, #number{phone_number_docs=Docs
                                       ,dry_run=DryRun
                                      }) ->
@@ -1215,13 +1215,13 @@ create_number_summary(_Account, #number{state=State
 %%--------------------------------------------------------------------
 -spec load_phone_number_doc(ne_binary()) ->
                                    {'ok', wh_json:object()} |
-                                   {'error', _}.
+                                   {'error', any()}.
 load_phone_number_doc(Account) ->
     load_phone_number_doc(Account, 'true').
 
 -spec load_phone_number_doc(ne_binary(), boolean()) ->
                                    {'ok', wh_json:object()} |
-                                   {'error', _}.
+                                   {'error', any()}.
 load_phone_number_doc(Account, 'true') ->
     AccountId = wh_util:format_account_id(Account, 'raw'),
     case erlang:get({'phone_number_doc', AccountId}) of
@@ -1262,9 +1262,7 @@ load_phone_number_doc(Account, 'false') ->
 update_service_plans(#number{billing_id='undefined'
                              ,assigned_to='undefined'
                              ,prev_assigned_to='undefined'
-                             ,number=Number
                             }=N) ->
-    lager:error("failed to update services_plan for ~p account is undefined", [Number]),
     N;
 update_service_plans(#number{billing_id='undefined'
                              ,assigned_to='undefined'

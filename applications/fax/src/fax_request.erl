@@ -150,7 +150,7 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
--spec handle_cast(term(), state()) -> handle_cast_return().
+-spec handle_cast(any(), state()) -> handle_cast_return().
 handle_cast('start_action', #state{call=_Call
                                    ,action='receive'
                                    ,owner_id=OwnerId
@@ -361,7 +361,7 @@ maybe_add_owner_to_notify_list(List, OwnerEmail) ->
     NotifyList = fax_util:notify_email_list('undefined', OwnerEmail, List),
     wh_json:set_value([<<"email">>, <<"send_to">>], NotifyList, wh_json:new()).
 
--spec maybe_update_fax_settings_from_account(state()) -> _.
+-spec maybe_update_fax_settings_from_account(state()) -> any().
 maybe_update_fax_settings_from_account(#state{call=Call}=State) ->
     case kz_account:fetch(whapps_call:account_id(Call)) of
         {'ok', JObj} ->
@@ -453,7 +453,7 @@ maybe_store_fax(JObj, #state{storage=#fax_storage{id=FaxId}}=State) ->
 
 -spec store_fax(wh_json:object(), state() ) ->
                        {'ok', ne_binary()} |
-                       {'error', _}.
+                       {'error', any()}.
 store_fax(JObj, #state{storage=#fax_storage{id=FaxDocId
                                             ,attachment_id=_AttachmentId
                                            }
@@ -559,7 +559,7 @@ create_fax_doc(JObj, #state{owner_id = OwnerId
                            ," " , wh_util:to_binary(H), ":", wh_util:to_binary(I), ":", wh_util:to_binary(S)
                            ," UTC"
                           ]),
-    <<Year:4/binary, Month:2/binary, "-", _/binary>> = FaxDocId,
+    ?MATCH_MODB_PREFIX(Year,Month,_) = FaxDocId,
     CdrId = <<(wh_util:to_binary(Year))/binary
               ,(wh_util:pad_month(Month))/binary
               ,"-"
@@ -572,6 +572,7 @@ create_fax_doc(JObj, #state{owner_id = OwnerId
                ,{<<"from_number">>, whapps_call:from_user(Call)}
                ,{<<"description">>, <<"fax document received">>}
                ,{<<"source_type">>, <<"incoming_fax">>}
+               ,{<<"folder">>, <<"inbox">>}
                ,{<<"timestamp">>, wh_json:get_value(<<"Timestamp">>, JObj)}
                ,{<<"owner_id">>, OwnerId}
                ,{<<"faxbox_id">>, FaxBoxId}

@@ -11,8 +11,8 @@
 -behaviour(gen_listener).
 
 -export([start_link/1
-         ,process_call_to_platform/1
          ,send_route_win/2
+         ,handle_answer/2
         ]).
 
 -export([init/1
@@ -29,11 +29,9 @@
 -record(state, {call = whapps_call:new() :: whapps_call:call()
                 ,flow = wh_json:new() :: wh_json:object()
                 ,relay_pid :: api_pid()
-                ,status = <<"sane">> :: ne_binary()
                 ,queue :: api_binary()
                 ,self = self() :: pid()
                }).
--type state() :: #state{}.
 
 -define(MAX_ATTEMPTS, whapps_config:get(?CCCP_CONFIG_CAT, <<"tries_count">>, 3)).
 -define(PLATFORM_COLLECT_TIMEOUT, whapps_config:get_integer(?CCCP_CONFIG_CAT, <<"platform_collect_timeout">>, 5000)).
@@ -48,14 +46,11 @@
                            ,{'call', [{'callid', CallId}]}
                           ]).
 
--define(RESPONDERS, [{{?MODULE, 'send_route_win'}
-                      ,[{<<"dialplan">>, <<"route_resp">>}]
-                     }
-                     ,{{'cccp_util', 'relay_amqp'}
-                       ,[{<<"call_event">>, <<"*">>}]
-                      }
+-define(RESPONDERS, [{{'cccp_util', 'relay_amqp'},[{<<"call_event">>, <<"*">>}]}
+                    ,{{'cccp_util', 'handle_disconnect'},[{<<"call_event">>, <<"CHANNEL_EXECUTE_COMPLETE">>}]}
+                    ,{{?MODULE, 'handle_answer'}, [{<<"call_event">>, <<"*">>}]}
+                    ,{{?MODULE, 'send_route_win'} ,[{<<"dialplan">>, <<"route_resp">>}]}
                     ]).
-
 -define(QUEUE_NAME, <<>>).
 -define(QUEUE_OPTIONS, []).
 -define(CONSUME_OPTIONS, []).
@@ -84,6 +79,7 @@ start_link(Call) ->
                                       ,{'queue_name', ?QUEUE_NAME}       % optional to include
                                       ,{'queue_options', ?QUEUE_OPTIONS} % optional to include
                                       ,{'consume_options', ?CONSUME_OPTIONS} % optional to include
+                                      %%,{basic_qos, 1}                % only needed if prefetch controls
                                      ], [Call]).
 
 %%%===================================================================
@@ -101,13 +97,9 @@ start_link(Call) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
--spec init(whapps_call:call()) -> {'ok', state()}.
 init([Call]) ->
-    process_flag('trap_exit', 'true'),
-    CallId = whapps_call:call_id(Call),
-    wh_util:put_callid(CallId),
-    self() ! 'initialize',
-    {'ok', #state{call=Call}}.
+    CallUpdate = whapps_call:kvs_store('server_pid', self(), Call),
+    {'ok', #state{call=CallUpdate}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -139,8 +131,12 @@ handle_call(_Request, _From, State) ->
 handle_cast({'gen_listener',{'created_queue',Queue}}, #state{call=Call}=State) ->
     {'noreply', State#state{call=whapps_call:set_controller_queue(Queue, Call)}};
 handle_cast({'gen_listener',{'is_consuming', 'true'}}, #state{call=Call}=State) ->
-    Pid = erlang:spawn_link(?MODULE, 'process_call_to_platform', [Call]),
-    {'noreply', State#state{relay_pid = Pid}};
+    whapps_call_command:answer(Call),
+    {'noreply', State};
+handle_cast({'relay_pid', PID}, State) when is_pid(PID)->
+    {'noreply', State#state{relay_pid = PID}};
+handle_cast('stop_platform_listener', State) ->
+    {'stop', 'normal', State};
 handle_cast(_Msg, State) ->
     lager:info("Unhandled msg: ~p", [_Msg]),
     {'noreply', State}.
@@ -155,9 +151,6 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info('initialize', #state{call=Call}=State) ->
-    CallUpdate = whapps_call:kvs_store('consumer_pid', self(), Call),
-    {'noreply', State#state{call=CallUpdate}};
 handle_info(_Info, State) ->
     {'noreply', State}.
 
@@ -173,21 +166,23 @@ handle_event(_JObj, #state{relay_pid = Pid
                            ,call = Call
                           }) ->
     Props = case kz_call_event:event_name(_JObj) of
-                <<"route_resp">> -> [{'relay_pid', Pid}
-                                     ,{'route_win', [{<<"Msg-ID">>, whapps_call:call_id(Call)}
-                                                     ,{<<"Call-ID">>, whapps_call:call_id(Call)}
-                                                     ,{<<"Control-Queue">>, whapps_call:control_queue(Call)}
-                                                     ,{<<"Custom-Channel-Vars">>, whapps_call:custom_channel_vars(Call)}
-                                                     | wh_api:default_headers(whapps_call:controller_queue(Call)
-                                                                              ,<<"dialplan">>
-                                                                              ,<<"route_win">>
-                                                                              ,?APP_NAME
-                                                                              ,?APP_VERSION
-                                                                             )
-                                                     ]}];
-        _ -> [{'relay_pid', Pid}]
+                <<"route_resp">> -> [{'route_win', [{<<"Msg-ID">>, whapps_call:call_id(Call)}
+                                                    ,{<<"Call-ID">>, whapps_call:call_id(Call)}
+                                                    ,{<<"Control-Queue">>, whapps_call:control_queue(Call)}
+                                                    ,{<<"Custom-Channel-Vars">>, whapps_call:custom_channel_vars(Call)}
+                                                    | wh_api:default_headers(whapps_call:controller_queue(Call)
+                                                                             ,<<"dialplan">>
+                                                                             ,<<"route_win">>
+                                                                             ,?APP_NAME
+                                                                             ,?APP_VERSION
+                                                                            )
+                                                    ]}];
+                _ -> []
     end,
-    {'reply', Props}.
+    {'reply', [{'relay_pid', Pid}
+               ,{'call', Call}
+               | Props
+              ]}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -218,10 +213,20 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+handle_answer(JObj, Props) ->
+    Srv = props:get_value('server', Props),
+    case wh_util:get_event_type(JObj) of
+        {<<"call_event">>,<<"CHANNEL_ANSWER">>} ->
+            gen_listener:cast(Srv, {'relay_pid', self()}),
+            process_call_to_platform(props:get_value('call', Props));
+        {<<"call_event">>,<<"CHANNEL_DESTROY">>} ->
+            gen_listener:cast(Srv, 'stop_platform_listener');
+        _ -> 'ok'
+    end.
+
 -spec process_call_to_platform(whapps_call:call()) -> 'ok'.
 process_call_to_platform(Call) ->
     wh_util:put_callid(whapps_call:call_id(Call)),
-    whapps_call_command:answer(Call),
     CID = cccp_util:caller_cid(Call),
     case (not cccp_blocking:is_cid_blocked(CID)) andalso authorize(Call) of
         'false' ->
@@ -255,12 +260,13 @@ authorize(Call, {'error', 'empty'}) ->
     pin_auth(Call, PinType);
 authorize(Call, {'error', _Err}) ->
     lager:error("Can't authorize coz of ~p", [_Err]),
-    pin_auth(Call, 'undefined');
+    pin_auth(Call, 'long_pin');
 authorize(_Call, {'ok', Auth}) ->
     Auth.
 
--spec pin_auth(whapps_call:call(), api_binary()) -> cccp_auth:cccp_auth() | 'fail' | 'match'.
--spec pin_auth(whapps_call:call(), api_binary(), term(), integer()) -> cccp_auth:cccp_auth() | 'fail' | 'match'.
+-type pin_type() :: 'long_pin' | 'short_pin'.
+-spec pin_auth(whapps_call:call(), pin_type()) -> cccp_auth:cccp_auth() | 'fail' | 'match'.
+-spec pin_auth(whapps_call:call(), pin_type(), term(), integer()) -> cccp_auth:cccp_auth() | 'fail' | 'match'.
 pin_auth(Call, Pin) ->
     pin_auth(Call, Pin, 'collect', ?MAX_ATTEMPTS).
 pin_auth(Call, _Pin, _State, Attempts) when Attempts =< 0 ->

@@ -142,7 +142,7 @@ handle_publisher_usurp(JObj, Props) ->
     Ref = props:get_value('reference', Props),
     Node = wh_util:to_binary(props:get_value('node', Props)),
 
-    lager:debug("recieved publisher usurp for ~s on ~s (if ~s != ~s)"
+    lager:debug("received publisher usurp for ~s on ~s (if ~s != ~s)"
                 ,[wh_json:get_value(<<"Call-ID">>, JObj)
                   ,wh_json:get_value(<<"Media-Node">>, JObj)
                   ,Ref
@@ -364,7 +364,7 @@ handle_info({'event', [CallId | Props]}, #state{node=Node
                         lager:debug("wh_media_recording is handling call recording publishing record stop");
                     _ ->
                         lager:debug("no one is handling call recording, storing recording"),
-                        wh_util:spawn(fun() -> store_recording(Props, CallId, Node) end)
+                        wh_util:spawn(fun store_recording/3, [Props, CallId, Node])
                 end,
             process_channel_event(Props),
             {'noreply', State};
@@ -883,7 +883,7 @@ silence_terminated(Prop) when is_list(Prop) ->
 is_channel_moving(Props) ->
     props:get_is_true(<<"variable_channel_is_moving">>, Props, 'false').
 
--spec get_channel_moving(wh_proplist()) -> 'undefined' | boolean().
+-spec get_channel_moving(wh_proplist()) -> api_boolean().
 get_channel_moving(Props) ->
     case is_channel_moving(Props) of
         'false' -> 'undefined';

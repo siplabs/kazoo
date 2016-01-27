@@ -50,7 +50,7 @@ outbound_cid(#auth{outbound_cid = CID}) ->
 auth_doc_id(#auth{auth_doc_id = AuthId}) ->
     AuthId.
 
--spec authorize(ne_binary(), ne_binary()) -> cccp_auth_ret().
+-spec authorize(ne_binary() | ne_binaries(), ne_binary()) -> cccp_auth_ret().
 authorize(Value, View) ->
     ViewOptions = [{'key', Value}],
     case couch_mgr:get_results(?KZ_CCCPS_DB, View, ViewOptions) of

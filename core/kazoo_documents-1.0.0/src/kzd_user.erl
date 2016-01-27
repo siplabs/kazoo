@@ -84,8 +84,7 @@ vcard_escape_chars(Val) ->
     Val1 = re:replace(Val, "(:|;|,)", "\\\\&", ['global', {'return', 'binary'}]),
     re:replace(Val1, "\n", "\\\\n", ['global', {'return', 'binary'}]).
 
--spec vcard_fields_acc(vcard_field(), list({ne_binary(), binary()})) ->
-                              list({ne_binary(), binary()}).
+-spec vcard_fields_acc(vcard_field(), [{ne_binary(), binary()}]) -> [{ne_binary(), binary()}].
 vcard_fields_acc({_, Val}, Acc)
   when Val =:= 'undefined'; Val =:= []; Val =:= <<>> ->
     Acc;
@@ -103,7 +102,7 @@ vcard_fields_acc([], Acc) ->
 
 -spec vcard_normalize_val(binary() | {char(), binaries()}) -> binary().
 vcard_normalize_val({Separator, Vals}) when is_list(Vals) ->
-    wh_util:join_binary([vcard_escape_chars(X) || X <- Vals, wh_util:is_not_empty(X)], Separator);
+    wh_util:join_binary([vcard_escape_chars(X) || X <- Vals, not wh_util:is_empty(X)], Separator);
 vcard_normalize_val(Val) when is_binary(Val) ->
     vcard_escape_chars(Val).
 
@@ -114,9 +113,9 @@ vcard_normalize_type(T) -> T.
 
 -type vcard_val() :: binary() | {char(), binaries()} | 'undefined'.
 -type vcard_type_token() :: ne_binary() | {ne_binary(), ne_binary()}.
--type vcard_type() :: list(vcard_type_token()) | vcard_type_token().
+-type vcard_type() :: [vcard_type_token()] | vcard_type_token().
 -type vcard_field_token() :: {vcard_type(), vcard_val()}.
--type vcard_field() :: vcard_field_token() | list(vcard_field_token()).
+-type vcard_field() :: vcard_field_token() | [vcard_field_token()].
 
 -spec card_field(ne_binary(), wh_json:object()) -> vcard_field().
 card_field(Key = <<"BEGIN">>, _) ->
@@ -131,7 +130,7 @@ card_field(Key = <<"FN">>, JObj) ->
     MiddleName = wh_json:get_value(<<"middle_name">>, JObj),
     {Key
      ,wh_util:join_binary([X || X <- [FirstName, MiddleName, LastName],
-                                wh_util:is_not_empty(X)
+                                not wh_util:is_empty(X)
                           ]
                           ,<<" ">>
                          )
@@ -203,7 +202,10 @@ normalize_address(JObj) ->
 timezone(JObj) ->
     timezone(JObj, 'undefined').
 timezone(JObj, Default) ->
-    wh_json:get_value(?KEY_TIMEZONE, JObj, Default).
+    case wh_json:get_value(?KEY_TIMEZONE, JObj, Default) of
+        <<"inherit">> -> Default;  %% UI-1808
+        TZ -> TZ
+    end.
 
 -spec presence_id(doc()) -> api_binary().
 -spec presence_id(doc(), Default) -> ne_binary() | Default.

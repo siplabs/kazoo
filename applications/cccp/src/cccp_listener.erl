@@ -22,13 +22,11 @@
 
 -include("cccp.hrl").
 
--record(state, {}).
-
 -define(BINDINGS, [{'self', []}
-                  ,{'route', []}
+                   ,{'route', []}
                   ]).
 -define(RESPONDERS, [{{'cccp_handlers', 'handle_route_req'}, [{<<"dialplan">>, <<"route_req">>}]}
-                    ,{{'cccp_handlers', 'handle_route_win'}, [{<<"dialplan">>, <<"route_win">>}]}
+                     ,{{'cccp_handlers', 'handle_route_win'}, [{<<"dialplan">>, <<"route_win">>}]}
                     ]).
 -define(QUEUE_NAME, <<>>).
 -define(QUEUE_OPTIONS, []).
@@ -72,7 +70,7 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     validate_sysconfig(),
-    {'ok', #state{}}.
+    {'ok', []}.
 
 %%--------------------------------------------------------------------
 %% @private

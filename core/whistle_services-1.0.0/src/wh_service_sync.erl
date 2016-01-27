@@ -129,11 +129,21 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info({'try_sync_service'}, State) ->
     _ = maybe_sync_service(),
+    _ = maybe_clear_process_dictionary(),
     _Ref = start_sync_service_timer(),
-    {'noreply', State};
+    {'noreply', State, 'hibernate'};
 handle_info(_Info, State) ->
     lager:debug("unhandled msg: ~p", [_Info]),
     {'noreply', State}.
+
+-spec maybe_clear_process_dictionary() -> 'ok'.
+maybe_clear_process_dictionary() ->
+    lists:foreach(fun maybe_clear_dictionary_entry/1, get()).
+
+-spec maybe_clear_dictionary_entry({any(), any()}) -> any().
+maybe_clear_dictionary_entry({{'phone_number_doc', _AccountId}=Key, _Doc}) ->
+    erase(Key);
+maybe_clear_dictionary_entry(_) -> 'ok'.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -259,7 +269,7 @@ sync_services(AccountId, ServiceJObj, ServiceItems) ->
             _ = mark_clean_and_status(wh_util:to_binary(Reason), ServiceJObj),
             maybe_sync_reseller(AccountId, ServiceJObj);
         _E:R ->
-            %% TODO: certain errors (such as no CC or expired, ect) should
+            %% TODO: certain errors (such as no CC or expired, etc) should
             %%    move the account of good standing...
             lager:info("unable to sync services(~p): ~p", [_E, R]),
             {'error', R}

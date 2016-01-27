@@ -22,7 +22,7 @@
 %% API
 -export([start_link/1
 
-         ,call/3, call/4
+         ,call/3, call/4, call/5
          ,call_collect/2, call_collect/3, call_collect/4
 
          ,call_custom/4, call_custom/5
@@ -60,7 +60,7 @@
 -define(QUEUE_OPTIONS, []).
 -define(CONSUME_OPTIONS, []).
 
--type publish_fun() :: fun((api_terms()) -> _).
+-type publish_fun() :: fun((api_terms()) -> any()).
 -type validate_fun() :: fun((api_terms()) -> boolean()).
 
 -type collect_until_acc() :: any().
@@ -176,12 +176,12 @@ default_timeout() -> 2 * ?MILLISECONDS_IN_SECOND.
 -type request_return() :: {'ok', wh_json:object() | wh_json:objects()} |
                           {'returned', wh_json:object(), wh_json:object()} |
                           {'timeout', wh_json:objects()} |
-                          {'error', _}.
+                          {'error', any()}.
 -spec call(api_terms(), publish_fun(), validate_fun()) ->
                   request_return().
 -spec call(api_terms(), publish_fun(), validate_fun(), wh_timeout()) ->
                   request_return().
--spec call(api_terms(), publish_fun(), validate_fun(), wh_timeout(), pid()) ->
+-spec call(api_terms(), publish_fun(), validate_fun(), wh_timeout(), pid()  | atom()) ->
                   request_return().
 call(Req, PubFun, VFun) ->
     call(Req, PubFun, VFun, default_timeout()).
@@ -192,7 +192,12 @@ call(Req, PubFun, VFun, Timeout) ->
         Worker -> call(Req, PubFun, VFun, Timeout, Worker)
     end.
 
-call(Req, PubFun, VFun, Timeout, Worker) ->
+call(Req, PubFun, VFun, Timeout, Pool) when is_atom(Pool) ->
+    case next_worker(Pool) of
+        {'error', _}=E -> E;
+        Worker -> call(Req, PubFun, VFun, Timeout, Worker)
+    end;
+call(Req, PubFun, VFun, Timeout, Worker) when is_pid(Worker) ->
     Prop = maybe_convert_to_proplist(Req),
     try gen_listener:call(Worker
                           ,{'request', Prop, PubFun, VFun, Timeout}
@@ -364,8 +369,12 @@ call_collect(Req, PubFun, UntilFun, Timeout, Acc, Worker) ->
         checkin_worker(Worker)
     end.
 
--spec cast(api_terms(), publish_fun()) -> 'ok' | {'error', _}.
--spec cast(api_terms(), publish_fun(), pid() | atom()) -> 'ok' | {'error', _}.
+-type cast_return() :: 'ok' |
+                       {'error', any()} |
+                       {'returned', wh_json:object(), wh_json:object()}.
+
+-spec cast(api_terms(), publish_fun()) -> cast_return().
+-spec cast(api_terms(), publish_fun(), pid() | atom()) -> cast_return().
 cast(Req, PubFun) ->
     cast(Req, PubFun, wh_amqp_sup:pool_name()).
 
@@ -444,7 +453,7 @@ handle_resp(JObj, Props) ->
                      ).
 
 -spec send_request(ne_binary(), ne_binary(), publish_fun(), wh_proplist()) ->
-                          'ok' | {'error', _}.
+                          'ok' | {'error', any()}.
 send_request(CallId, Self, PublishFun, ReqProps)
   when is_function(PublishFun, 1) ->
     wh_util:put_callid(CallId),
@@ -522,7 +531,7 @@ handle_call({'request', ReqProp, PublishFun, VFun, Timeout}
            ) ->
     _ = wh_util:put_callid(ReqProp),
     CallId = get('callid'),
-    MsgId = wh_api:msg_id(ReqProp),
+    MsgId = wh_api:msg_reply_id(ReqProp),
 
     case ?MODULE:send_request(CallId, Q, PublishFun, ReqProp) of
         'ok' ->
@@ -558,7 +567,7 @@ handle_call({'call_collect', ReqProp, PublishFun, UntilFun, Timeout, Acc}
            ) ->
     _ = wh_util:put_callid(ReqProp),
     CallId = get('callid'),
-    MsgId = wh_api:msg_id(ReqProp),
+    MsgId = wh_api:msg_reply_id(ReqProp),
 
     case ?MODULE:send_request(CallId, Q, PublishFun, ReqProp) of
         'ok' ->
@@ -622,7 +631,7 @@ handle_call({'publish', ReqProp, PublishFun}, {Pid, _}=From, #state{confirms=C}=
             lager:debug("pub fun: ~p", [PublishFun]),
             {'reply', {'error', 'function_clause'}, reset(State)};
         _E:R ->
-            lager:debug("failed to publish request: ~s:~p", [_E, R]),
+            lager:debug("error when publishing: ~s:~p", [_E, R]),
             {'reply', {'error', R}, reset(State)}
     end;
 handle_call(_Request, _From, State) ->

@@ -191,10 +191,10 @@ fetch(<<_/binary>> = Account) ->
 
 -spec fetch_services_doc(ne_binary()) ->
                                 {'ok', wh_json:object()} |
-                                {'error', _}.
+                                {'error', any()}.
 -spec fetch_services_doc(ne_binary(), boolean()) ->
                                 {'ok', wh_json:object()} |
-                                {'error', _}.
+                                {'error', any()}.
 fetch_services_doc(AccountId) ->
     fetch_services_doc(AccountId, 'false').
 
@@ -503,7 +503,7 @@ check_bookkeeper(BillingId, Amount) ->
     case select_bookkeeper(BillingId) of
         'wh_bookkeeper_local' ->
             Balance = wht_util:current_balance(BillingId),
-            Balance - Amount =< 0;
+            Balance - Amount >= 0;
         Bookkeeper -> Bookkeeper:is_good_standing(BillingId)
     end.
 
@@ -666,7 +666,7 @@ default_maybe_allow_updates(AccountId) ->
 
 -spec spawn_move_to_good_standing(ne_binary()) -> 'true'.
 spawn_move_to_good_standing(<<_/binary>> = AccountId) ->
-    _ = wh_util:spawn(fun() -> move_to_good_standing(AccountId) end),
+    _ = wh_util:spawn(fun move_to_good_standing/1, [AccountId]),
     'true'.
 
 -spec move_to_good_standing(ne_binary()) -> services().
@@ -1054,7 +1054,7 @@ dry_run_activation_charges(CategoryId, ItemId, Quantity, #wh_services{jobj=JObj}
     case kzd_services:item_quantity(JObj, CategoryId, ItemId) of
         Quantity -> JObjs;
         OldQuantity ->
-            ServicesJObj = wh_services:to_json(Services),
+            ServicesJObj = ?MODULE:to_json(Services),
             Plans = wh_service_plans:from_service_json(ServicesJObj),
             ServicePlan = wh_service_plans:public_json(Plans),
             ItemPlan = get_item_plan(CategoryId, ItemId, ServicePlan),

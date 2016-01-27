@@ -28,11 +28,11 @@
                             'unknown_req_id' | 'retry_later' |
                             'req_timedout' | 'sel_conn_closed' |
                             'invalid_view_name' | 'gateway_timeout' |
-                            {integer(), term()} | % {error_code, body}
+                            {integer(), _} | % {error_code, body}
                             integer() |
-                            {'EXIT', term()} |
-                            {'url_parsing_failed', term()} |
-                            {'conn_failed', term()} |
+                            {'EXIT', _} |
+                            {'url_parsing_failed', _} |
+                            {'conn_failed', _} |
                             {'ok', string(), _, _}.
 -type couchbeam_error() :: {'error', couchbeam_errors()}.
 
@@ -66,8 +66,10 @@
                               ,ready = 'false'
                               ,admin = 'false'
                               ,server = #server{}
+                              ,tag = 'local'
                              }).
 -type couch_connection() :: #wh_couch_connection{}.
+-type couch_connections() :: [couch_connection()].
 
 -type couchbeam_db() :: #db{}.
 

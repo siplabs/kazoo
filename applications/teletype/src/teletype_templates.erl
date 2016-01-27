@@ -81,14 +81,17 @@ load_templates(DataJObj) ->
       ]).
 
 fetch(TemplateId, AccountId, AccountId) ->
-    case fetch_failure_cache(TemplateId, AccountId) of
-        'error' -> fetch_master(TemplateId);
-        'ok' -> fetch_from_db(TemplateId, AccountId, AccountId)
+    case fetch_from_db(TemplateId, AccountId) of
+        {'error', 'not_found'} -> fetch_master(TemplateId);
+        {'error', _} -> [];
+        OK -> OK
     end;
 fetch(TemplateId, AccountId, ResellerId) ->
-    case fetch_failure_cache(TemplateId, AccountId) of
-        'error' -> fetch_parent(TemplateId, AccountId, ResellerId);
-        'ok' -> fetch_from_db(TemplateId, AccountId, ResellerId)
+    case fetch_from_db(TemplateId, AccountId) of
+        {'error', 'not_found'} ->
+            fetch_parent(TemplateId, AccountId, ResellerId);
+        {'error', _} -> [];
+        OK -> OK
     end.
 
 %%--------------------------------------------------------------------
@@ -121,7 +124,7 @@ fetch_meta(TemplateId, AccountId, ResellerId) ->
     case couch_mgr:open_cache_doc(AccountDb, doc_id(TemplateId)) of
         {'ok', _TemplateJObj}=OK -> OK;
         {'error', 'not_found'} ->
-            fetch_meta(TemplateId, get_parent_account_id(AccountId), ResellerId);
+            fetch_meta(TemplateId, teletype_util:get_parent_account_id(AccountId), ResellerId);
         {'error', _E} ->
             lager:debug("failed to fetch template ~s from ~s ~p", [TemplateId, AccountId, _E]),
             fetch_master_meta(TemplateId)
@@ -195,7 +198,7 @@ fetch_parent(TemplateId, AccountId, AccountId) ->
     fetch_master(TemplateId);
 fetch_parent(TemplateId, AccountId, ResellerId) ->
     lager:debug("trying to fetch parent template ~s for ~s", [TemplateId, AccountId]),
-    case get_parent_account_id(AccountId) of
+    case teletype_util:get_parent_account_id(AccountId) of
         'undefined' ->
             lager:debug("parent account_id for ~s is undefined", [AccountId]),
             [];
@@ -203,70 +206,33 @@ fetch_parent(TemplateId, AccountId, ResellerId) ->
             fetch(TemplateId, ParentAccountId, ResellerId)
     end.
 
--spec get_parent_account_id(ne_binary()) -> api_binary().
-get_parent_account_id(AccountId) ->
-    case couch_mgr:open_cache_doc(?WH_ACCOUNTS_DB, AccountId) of
-        {'ok', JObj} -> kz_account:parent_account_id(JObj);
-        {'error', _E} ->
-            lager:error("failed to account ~s", [AccountId]),
-            'undefined'
-    end.
-
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
 %% @end
 %%--------------------------------------------------------------------
--spec fetch_from_db(ne_binary(), ne_binary(), ne_binary()) -> wh_proplist().
-fetch_from_db(TemplateId, AccountId, ResellerId) ->
+-spec fetch_from_db(ne_binary(), ne_binary()) ->
+                           wh_proplist() |
+                           {'error', any()}.
+fetch_from_db(TemplateId, AccountId) ->
     AccountDb = wh_util:format_account_id(AccountId, 'encoded'),
     DocId = doc_id(TemplateId),
     lager:debug("fetching template ~s in ~s", [DocId, AccountId]),
-    case couch_mgr:open_cache_doc(AccountDb, DocId) of
+    case couch_mgr:open_cache_doc(AccountDb
+                                  ,DocId
+                                  ,[{'cache_failures', ['not_found']}]
+                                 )
+    of
         {'ok', TemplateJObj} ->
             fetch_attachment(
               DocId
               ,AccountDb
               ,wh_doc:attachments(TemplateJObj, wh_json:new())
              );
-        {'error', 'not_found'} ->
-            lager:debug("failed to fetch template ~s from ~s not_found", [TemplateId, AccountId]),
-            _ = cache_failure(TemplateId, AccountId),
-            fetch_parent(TemplateId, AccountId, ResellerId);
-        {'error', _E} ->
-            lager:debug("failed to fetch template ~s from ~s ~p", [TemplateId, AccountId, _E]),
-            []
+        {'error', _E}=E ->
+            lager:debug("failed to fetch template ~s from ~s: ~s", [TemplateId, AccountId, _E]),
+            E
     end.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%%--------------------------------------------------------------------
--spec fetch_failure_cache(ne_binary(), ne_binary()) -> 'ok' | 'error'.
-fetch_failure_cache(TemplateId, AccountId) ->
-    lager:debug("looking if ~s recenlty failed to be fetched in ~s", [TemplateId, AccountId]),
-    case wh_cache:fetch_local(?CACHE_NAME, ?TEMPLATE_FAILURE_KEY(TemplateId, AccountId)) of
-        {'ok', 'failed'} -> 'error';
-        {'error', 'not_found'} -> 'ok'
-    end.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%%--------------------------------------------------------------------
--spec cache_failure(ne_binary(), ne_binary()) -> 'ok'.
-cache_failure(TemplateId, AccountId) ->
-    lager:debug("caching failure to find ~s in ~s", [TemplateId, AccountId]),
-    AccountDb = wh_util:format_account_id(AccountId, 'encoded'),
-    CacheProps = [{'origin', {'db', AccountDb, doc_id(TemplateId)}}],
-    wh_cache:store_local(
-      ?CACHE_NAME
-      ,?TEMPLATE_FAILURE_KEY(TemplateId, AccountId)
-      ,'failed'
-      ,CacheProps
-     ).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -319,7 +285,7 @@ maybe_update(TemplateJObj, Params) ->
 %%--------------------------------------------------------------------
 -spec update(wh_json:object(), init_params()) ->
                     'ok' | {'ok', wh_json:object()} |
-                    {'error', _}.
+                    {'error', any()}.
 update(TemplateJObj, Params) ->
     case update_from_params(TemplateJObj, Params) of
         {'false', _} -> lager:debug("no updates to template");
@@ -335,7 +301,7 @@ update(TemplateJObj, Params) ->
 %%--------------------------------------------------------------------
 -spec save(wh_json:object()) ->
                   {'ok', wh_json:object()} |
-                  {'error', _}.
+                  {'error', any()}.
 save(TemplateJObj) ->
     SaveJObj = wh_doc:update_pvt_parameters(TemplateJObj, ?WH_CONFIG_DB),
     case couch_mgr:save_doc(?WH_CONFIG_DB, SaveJObj) of
@@ -573,7 +539,7 @@ does_attachment_exist(DocId, AName) ->
 %%--------------------------------------------------------------------
 -spec save_attachment(ne_binary(), ne_binary(), ne_binary(), binary()) ->
                              {'ok', wh_json:object()} |
-                             {'error', _}.
+                             {'error', any()}.
 save_attachment(DocId, AName, ContentType, Contents) ->
     case
         couch_mgr:put_attachment(

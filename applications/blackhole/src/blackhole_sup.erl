@@ -21,6 +21,7 @@
 %% Helper macro for declaring children of supervisor
 -define(CHILDREN, [?CACHE('blackhole_cache')
                    ,?WORKER('blackhole_listener')
+                   ,?WORKER('blackhole_tracking')
                   ]).
 
 %% ===================================================================
@@ -44,6 +45,7 @@ start_link() ->
                                                                           ,{'callback', 'blackhole_socket_callback'}
                                                                           ,{'protocol', 'socketio_data_protocol'}
                                                                           ])]}
+                                            ,{"/", 'blackhole_default_handler', []}
                                             ]
                                       }
                                      ]),

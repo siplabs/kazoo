@@ -14,7 +14,7 @@
 %% Internal functions
 %% ====================================================================
 
--spec register_oauth_app(ne_binary(), ne_binary(), ne_binary(), ne_binary(), ne_binary()) -> _.
+-spec register_oauth_app(ne_binary(), ne_binary(), ne_binary(), ne_binary(), ne_binary()) -> any().
 register_oauth_app(AccountId, OAuthId, EMail, Secret, Provider) ->
     Doc = wh_json:from_list([
            {<<"_id">>, OAuthId}
@@ -32,5 +32,5 @@ register_oauth_app(AccountId, OAuthId, EMail, Secret, Provider) ->
 
 -spec register_common_providers() -> 'ok'.
 register_common_providers() ->
-    {'ok', _} = couch_mgr:load_doc_from_file(?KZ_OAUTH_DB, 'kazoo_oauth', <<"google.json">>),
+    {'ok', _} = couch_mgr:revise_doc_from_file(?KZ_OAUTH_DB, 'kazoo_oauth', <<"google.json">>),
     'ok'.

@@ -25,15 +25,11 @@
 -define(RESPONDERS, [{'reg_authn_req'
                       ,[{<<"directory">>, <<"authn_req">>}]
                      }
-                     ,{'reg_authz_req'
-                       ,[{<<"authz">>, <<"authz_req">>}]
-                      }
                      ,{{'reg_route_req', 'handle_route_req'}
                        ,[{<<"dialplan">>, <<"route_req">>}]
                       }
                     ]).
 -define(BINDINGS, [{'authn', []}
-                   ,{'authz', []}
                    ,{'route', []}
                    ,{'self', []}
                   ]).
@@ -148,7 +144,7 @@ handle_event(_JObj, _State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
--spec terminate(term(), term()) -> 'ok'.
+-spec terminate(any(), any()) -> 'ok'.
 terminate(_Reason, _) ->
     lager:debug("registrar shared queue server ~p termination", [_Reason]).
 

@@ -17,6 +17,9 @@
 
          ,add_object_bindings/1
          ,remove_object_bindings/1
+
+         ,add_account_bindings/0
+         ,remove_account_bindings/0
         ]).
 -export([init/1
          ,handle_call/3
@@ -28,6 +31,7 @@
         ]).
 
 -include("webhooks.hrl").
+-include_lib("whistle/include/wapi_conf.hrl").
 
 -record(state, {}).
 -type state() :: #state{}.
@@ -61,7 +65,8 @@
 -spec start_link() -> startlink_ret().
 start_link() ->
     {Bindings, Responders} = load_module_bindings_and_responders(),
-    gen_listener:start_link(?MODULE
+    gen_listener:start_link({'local', ?MODULE}
+                            ,?MODULE
                             ,[{'bindings', Bindings}
                               ,{'responders', Responders}
                               ,{'queue_name', ?QUEUE_NAME}
@@ -145,8 +150,8 @@ hooks_configured(AccountId) ->
 
 -define(FORMAT_STRING_SUMMARY, "| ~-45s | ~-5s | ~-20s | ~-10s | ~-32s |~n").
 
--spec print_summary('$end_of_table' | {webhooks(), term()}) -> 'ok'.
--spec print_summary('$end_of_table' | {webhooks(), term()}, non_neg_integer()) -> 'ok'.
+-spec print_summary('$end_of_table' | {webhooks(), any()}) -> 'ok'.
+-spec print_summary('$end_of_table' | {webhooks(), any()}, non_neg_integer()) -> 'ok'.
 print_summary('$end_of_table') ->
     io:format("no webhooks configured~n", []);
 print_summary(Match) ->
@@ -190,6 +195,25 @@ remove_object_bindings(AccountId) ->
          || Binding <- Bindings
         ],
     'ok'.
+
+-define(ACCOUNT_BINDING
+       ,{'conf', [{'restrict_to', ['doc_updates']}
+                 ,{'type', <<"database">>}
+                 ]
+        }
+       ).
+
+-spec add_account_bindings() -> 'ok'.
+add_account_bindings() ->
+    gen_listener:add_responder(?MODULE
+                              ,{'webhooks_init', 'maybe_init_account'}
+                              ,[{<<"configuration">>, ?DB_CREATED}]
+                              ),
+    gen_listener:add_binding(?MODULE, ?ACCOUNT_BINDING).
+
+-spec remove_account_bindings() -> 'ok'.
+remove_account_bindings() ->
+    gen_listener:rm_binding(?MODULE, ?ACCOUNT_BINDING).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -258,8 +282,7 @@ handle_cast(_Msg, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info(?HOOK_EVT(AccountId, EventType, JObj), State) ->
-    _ = wh_util:spawn(?MODULE
-                      ,'maybe_handle_channel_event'
+    _ = wh_util:spawn(fun webhooks_channel_util:maybe_handle_channel_event/3
                       ,[AccountId, EventType, JObj]
                      ),
     {'noreply', State};

@@ -157,7 +157,7 @@ new(#channel{}=Channel) ->
 destroy(UUID, Node) ->
     gen_server:cast(?MODULE, {'destroy_channel', UUID, Node}).
 
--spec update(ne_binary(), pos_integer(), _) -> 'ok'.
+-spec update(ne_binary(), pos_integer(), any()) -> 'ok'.
 update(UUID, Key, Value) ->
     updates(UUID, [{Key, Value}]).
 
@@ -298,6 +298,9 @@ handle_channel_status(JObj, _Props) ->
                    ,{<<"Switch-Nodename">>, wh_util:to_binary(Node)}
                    ,{<<"Switch-URL">>, ecallmgr_fs_nodes:sip_url(Node)}
                    ,{<<"Other-Leg-Call-ID">>, wh_json:get_value(<<"other_leg">>, Channel)}
+                   ,{<<"Realm">>, wh_json:get_value(<<"realm">>, Channel)}
+                   ,{<<"Username">>, wh_json:get_value(<<"username">>, Channel)}
+                   ,{<<"Custom-Channel-Vars">>, wh_json:from_list(ecallmgr_fs_channel:channel_ccvs(Channel))}
                    ,{<<"Msg-ID">>, wh_json:get_value(<<"Msg-ID">>, JObj)}
                    | wh_api:default_headers(?APP_NAME, ?APP_VERSION)
                   ]
@@ -389,7 +392,7 @@ handle_call(_, _, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
--spec handle_cast(term(), state()) -> {'noreply', state()}.
+-spec handle_cast(any(), state()) -> {'noreply', state()}.
 handle_cast({'destroy_channel', UUID, Node}, State) ->
     MatchSpec = [{#channel{uuid='$1', node='$2', _ = '_'}
                   ,[{'andalso', {'=:=', '$2', {'const', Node}}
@@ -444,7 +447,7 @@ handle_cast({'flush_node', Node}, State) ->
         [] ->
             lager:debug("no locally handled channels");
         LocalChannels ->
-            _P = wh_util:spawn(fun() -> handle_channels_disconnected(LocalChannels) end),
+            _P = wh_util:spawn(fun handle_channels_disconnected/1, [LocalChannels]),
             lager:debug("sending channel disconnecteds for local channels: ~p", [LocalChannels])
     end,
 
@@ -809,7 +812,7 @@ maybe_cleanup_old_channels() ->
     case max_channel_uptime() of
         N when N =< 0 -> 'ok';
         MaxAge ->
-            _P = wh_util:spawn(?MODULE, 'cleanup_old_channels', [MaxAge]),
+            _P = wh_util:spawn(fun cleanup_old_channels/1, [MaxAge]),
             'ok'
     end.
 

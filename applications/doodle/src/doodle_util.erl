@@ -124,13 +124,13 @@ save_sms(JObj, 'undefined', Call) ->
     save_sms(JObj, SmsDocId, Doc, UpdatedCall);
 save_sms(JObj, DocId, Call) ->
     AccountId = whapps_call:account_id(Call),
-    <<Year:4/binary, Month:2/binary, "-", _/binary>> = DocId,
+    ?MATCH_MODB_PREFIX(Year,Month,_) = DocId,
     {'ok', Doc} = kazoo_modb:open_doc(AccountId, DocId, Year, Month),
     save_sms(JObj, DocId, Doc, Call).
 
--spec save_sms(wh_json:object(), api_binary(), wh_json:object(), whapps_call:call()) -> whapps_call:call().
-save_sms(JObj, DocId, Doc, Call) ->
-    <<Year:4/binary, Month:2/binary, "-", _/binary>> = DocId,
+-spec save_sms(wh_json:object(), api_binary(), wh_json:object(), whapps_call:call()) ->
+                      whapps_call:call().
+save_sms(JObj, ?MATCH_MODB_PREFIX(Year,Month,_) = DocId, Doc, Call) ->
     AccountId = whapps_call:account_id(Call),
     AccountDb = kazoo_modb:get_modb(AccountId, Year, Month),
     OwnerId = whapps_call:owner_id(Call),
@@ -207,7 +207,7 @@ remove_keys(Call, Keys) ->
 
 -spec endpoint_id_from_sipdb(ne_binary(), ne_binary()) ->
                                     {'ok', ne_binary()} |
-                                    {'error', _}.
+                                    {'error', any()}.
 endpoint_id_from_sipdb(Realm, Username) ->
     case wh_cache:peek_local(?DOODLE_CACHE, ?SIP_ENDPOINT_ID_KEY(Realm, Username)) of
         {'ok', _}=Ok -> Ok;
@@ -217,7 +217,7 @@ endpoint_id_from_sipdb(Realm, Username) ->
 
 -spec get_endpoint_id_from_sipdb(ne_binary(), ne_binary()) ->
                                         {'ok', ne_binary(), ne_binary()} |
-                                        {'error', _}.
+                                        {'error', any()}.
 get_endpoint_id_from_sipdb(Realm, Username) ->
     ViewOptions = [{'key', [wh_util:to_lower_binary(Realm)
                             ,wh_util:to_lower_binary(Username)
@@ -240,7 +240,7 @@ get_endpoint_id_from_sipdb(Realm, Username) ->
 
 -spec endpoint_from_sipdb(ne_binary(), ne_binary()) ->
                                  {'ok', wh_json:object()} |
-                                 {'error', _}.
+                                 {'error', any()}.
 endpoint_from_sipdb(Realm, Username) ->
     case wh_cache:peek_local(?DOODLE_CACHE, ?SIP_ENDPOINT_KEY(Realm, Username)) of
         {'ok', _}=Ok -> Ok;
@@ -250,7 +250,7 @@ endpoint_from_sipdb(Realm, Username) ->
 
 -spec get_endpoint_from_sipdb(ne_binary(), ne_binary()) ->
                                      {'ok', wh_json:object()} |
-                                     {'error', _}.
+                                     {'error', any()}.
 get_endpoint_from_sipdb(Realm, Username) ->
     ViewOptions = [{'key', [wh_util:to_lower_binary(Realm)
                             ,wh_util:to_lower_binary(Username)
@@ -273,7 +273,7 @@ get_endpoint_from_sipdb(Realm, Username) ->
             E
     end.
 
--spec replay_sms(ne_binary(), ne_binary()) -> _.
+-spec replay_sms(ne_binary(), ne_binary()) -> any().
 replay_sms(AccountId, DocId) ->
     lager:debug("trying to replay sms ~s for account ~s",[DocId, AccountId]),
     {'ok', Doc} = kazoo_modb:open_doc(AccountId, DocId),
@@ -282,7 +282,7 @@ replay_sms(AccountId, DocId) ->
     Rev = wh_doc:revision(Doc),
     replay_sms_flow(AccountId, DocId, Rev, Flow, Schedule).
 
--spec replay_sms_flow(ne_binary(), ne_binary(), ne_binary(), api_object(), api_object()) -> _.
+-spec replay_sms_flow(ne_binary(), ne_binary(), ne_binary(), api_object(), api_object()) -> any().
 replay_sms_flow(_AccountId, _DocId, _Rev, 'undefined', _) -> 'ok';
 replay_sms_flow(AccountId, <<_:7/binary, CallId/binary>> = DocId, Rev, JObj, Schedule) ->
     lager:debug("replaying sms ~s for account ~s",[DocId, AccountId]),
@@ -295,7 +295,7 @@ replay_sms_flow(AccountId, <<_:7/binary, CallId/binary>> = DocId, Rev, JObj, Sch
     Call = whapps_call:exec(Routines, whapps_call:from_json(JObj)),
     whapps_call:put_callid(Call),
     lager:info("doodle received sms resume for ~s of account ~s, taking control", [DocId, AccountId]),
-    doodle_route_win:maybe_replay_sms(JObj, Call).
+    doodle_route_win:execute_text_flow(JObj, Call).
 
 -spec sms_status(api_object()) -> ne_binary().
 sms_status('undefined') -> <<"pending">>;
@@ -410,7 +410,7 @@ get_inbound_destination(JObj) ->
 %%--------------------------------------------------------------------
 -spec lookup_number(ne_binary()) ->
                            {'ok', ne_binary(), wh_proplist()} |
-                           {'error', _}.
+                           {'error', any()}.
 lookup_number(Number) ->
     Num = wnm_util:normalize_number(Number),
     case wh_cache:fetch_local(?DOODLE_CACHE, cache_key_number(Num)) of
@@ -422,7 +422,7 @@ lookup_number(Number) ->
 
 -spec fetch_number(ne_binary()) ->
                           {'ok', ne_binary(), wh_proplist()} |
-                          {'error', _}.
+                          {'error', any()}.
 fetch_number(Num) ->
     case wh_number_manager:lookup_account_by_number(Num) of
         {'ok', AccountId, Props} ->
@@ -441,7 +441,7 @@ cache_key_number(Number) ->
 
 -spec lookup_mdn(ne_binary()) ->
                         {'ok', ne_binary(), api_binary()} |
-                        {'error', _}.
+                        {'error', any()}.
 lookup_mdn(Number) ->
     Num = wnm_util:normalize_number(Number),
     case wh_cache:fetch_local(?DOODLE_CACHE, cache_key_mdn(Num)) of
@@ -453,7 +453,7 @@ lookup_mdn(Number) ->
 
 -spec fetch_mdn(ne_binary()) ->
                        {'ok', ne_binary(), api_binary()} |
-                       {'error', _}.
+                       {'error', any()}.
 fetch_mdn(Num) ->
     case lookup_number(Num) of
         {'ok', AccountId, _Props} ->
@@ -585,7 +585,7 @@ apply_reschedule_step({[Value | Values], [Key | Keys]}, JObj) ->
         Schedule -> apply_reschedule_step({Values, Keys}, Schedule)
     end.
 
--spec apply_reschedule_rule(ne_binary(), _, wh_json:object()) -> 'no_match' | wh_json:object().
+-spec apply_reschedule_rule(ne_binary(), any(), wh_json:object()) -> 'no_match' | wh_json:object().
 apply_reschedule_rule(<<"error">>, ErrorObj, JObj) ->
     Codes = wh_json:get_value(<<"code">>, ErrorObj, []),
     XCodes = wh_json:get_value(<<"xcode">>, ErrorObj, []),
@@ -642,11 +642,11 @@ apply_reschedule_rule(<<"report">>, V, JObj) ->
     JObj;
 apply_reschedule_rule(_, _, JObj) -> JObj.
 
--spec safe_to_proplist(_) -> wh_proplist().
+-spec safe_to_proplist(any()) -> wh_proplist().
 safe_to_proplist(JObj) ->
     safe_to_proplist(wh_json:is_json_object(JObj), JObj).
 
--spec safe_to_proplist(boolean(), _) -> wh_proplist().
+-spec safe_to_proplist(boolean(), any()) -> wh_proplist().
 safe_to_proplist('true', JObj) ->
     wh_json:to_proplist(JObj);
 safe_to_proplist(_, _) -> [].

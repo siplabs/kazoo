@@ -19,6 +19,7 @@
          ,handle_member_call/2
          ,handle_member_call_cancel/2
          ,handle_agent_change/2
+         ,are_agents_available/1
          ,handle_config_change/2
          ,should_ignore_member_call/3, should_ignore_member_call/4
          ,config/1
@@ -155,6 +156,10 @@ handle_member_call(JObj, Props) ->
         'true' ->
             start_queue_call(JObj, Props, Call)
     end.
+
+-spec are_agents_available(server_ref()) -> boolean().
+are_agents_available(Srv) ->
+    are_agents_available(Srv, gen_listener:call(Srv, 'enter_when_empty')).
 
 are_agents_available(Srv, EnterWhenEmpty) ->
     agents_available(Srv) > 0 orelse EnterWhenEmpty.
@@ -347,6 +352,9 @@ handle_call('agents_available', _, #state{strategy_state=[_|_]}=State) ->
     {'reply', 1, State};
 handle_call('agents_available', _, #state{strategy_state=SS}=State) ->
     {'reply', queue:len(SS), State};
+
+handle_call('enter_when_empty', _, #state{enter_when_empty=EnterWhenEmpty}=State) ->
+    {'reply', EnterWhenEmpty, State};
 
 handle_call('next_winner', _, #state{strategy='mi'}=State) ->
     {'reply', 'undefined', State};
@@ -566,18 +574,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 start_secondary_queue(AccountId, QueueId) ->
-    Self = self(),
     AccountDb = wh_util:format_account_db(AccountId),
     Priority = lookup_priority_levels(AccountDb, QueueId),
-    _ = wh_util:spawn(
-          fun() -> gen_listener:add_queue(Self
-                                          ,?SECONDARY_QUEUE_NAME(QueueId)
-                                          ,[{'queue_options', ?SECONDARY_QUEUE_OPTIONS(Priority)}
-                                            ,{'consume_options', ?SECONDARY_CONSUME_OPTIONS}
-                                           ]
-                                          ,?SECONDARY_BINDINGS(AccountId, QueueId)
-                                         )
-          end).
+    wh_util:spawn(fun gen_listener:add_queue/4
+                  ,[self()
+                    ,?SECONDARY_QUEUE_NAME(QueueId)
+                    ,[{'queue_options', ?SECONDARY_QUEUE_OPTIONS(Priority)}
+                     ,{'consume_options', ?SECONDARY_CONSUME_OPTIONS}
+                     ]
+                    ,?SECONDARY_BINDINGS(AccountId, QueueId)
+                   ]).
 
 -spec lookup_priority_levels(ne_binary(), ne_binary()) -> api_integer().
 lookup_priority_levels(AccountDB, QueueId) ->

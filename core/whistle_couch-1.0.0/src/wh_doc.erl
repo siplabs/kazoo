@@ -20,7 +20,8 @@
          ,attachment_names/1
          ,attachment/1, attachment/2, attachment/3
 
-         ,attachment_length/2, attachment_content_type/2
+         ,attachment_length/2
+         ,attachment_content_type/2, attachment_content_type/3
          ,attachment_property/3
          ,delete_attachments/1, delete_attachment/2
          ,maybe_remove_attachments/1, maybe_remove_attachments/2
@@ -152,7 +153,7 @@ modified(JObj) ->
 modified(JObj, Default) ->
     wh_json:get_integer_value(?KEY_MODIFIED, JObj, Default).
 
--spec add_id(wh_json:object(), _, wh_proplist()) -> wh_json:object().
+-spec add_id(wh_json:object(), any(), wh_proplist()) -> wh_json:object().
 add_id(JObj, _, Opts) ->
     case props:get_value('id', Opts) of
         'undefined' -> JObj;
@@ -226,8 +227,14 @@ attachment_length(JObj, AName) ->
     attachment_property(JObj, AName, <<"length">>).
 
 -spec attachment_content_type(wh_json:object(), ne_binary()) -> api_binary().
+-spec attachment_content_type(wh_json:object(), ne_binary(), ne_binary()) -> ne_binary().
 attachment_content_type(JObj, AName) ->
     attachment_property(JObj, AName, <<"content_type">>).
+attachment_content_type(JObj, AName, DefaultContentType) ->
+    case attachment_content_type(JObj, AName) of
+        'undefined' -> DefaultContentType;
+        ContentType -> ContentType
+    end.
 
 -spec attachment_property(wh_json:object(), ne_binary(), wh_json:key()) -> wh_json:json_term().
 attachment_property(JObj, AName, Key) ->
@@ -275,7 +282,7 @@ id(JObj) ->
     id(JObj, 'undefined').
 
 id(JObj, Default) ->
-    Id = wh_json:get_first_defined([?KEY_ID, <<"id">>], JObj, Default),
+    Id = wh_json:get_first_defined([?KEY_ID, <<"id">>, <<"ID">>], JObj, Default),
     case wh_util:is_empty(Id) of
         'true' -> Default;
         'false' -> Id

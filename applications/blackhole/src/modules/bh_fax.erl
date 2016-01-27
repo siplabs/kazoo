@@ -14,7 +14,7 @@
 
 -include("../blackhole.hrl").
 
--spec handle_event(bh_context:context(), wh_json:object()) -> any().
+-spec handle_event(bh_context:context(), wh_json:object()) -> 'ok'.
 handle_event(Context, EventJObj) ->
     wh_util:put_callid(EventJObj),
     lager:debug("handle_event fired for ~s ~s", [bh_context:account_id(Context), bh_context:websocket_session_id(Context)]),
@@ -39,6 +39,7 @@ add_amqp_binding(<<"fax.status.", FaxId/binary>>, Context) ->
     blackhole_listener:add_binding('fax', [{'restrict_to', ['status']}
                                            ,{'account_id', bh_context:account_id(Context)}
                                            ,{'fax_id', FaxId}
+                                           ,'federate'
                                           ]);
 add_amqp_binding(_Binding, _Context) ->
     lager:debug("unmatched binding ~s", [_Binding]).

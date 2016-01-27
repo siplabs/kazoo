@@ -31,7 +31,7 @@ start_link() ->
 %% Starts the application
 %% @end
 %%--------------------------------------------------------------------
--spec start() -> 'ok' | {'error', _}.
+-spec start() -> 'ok' | {'error', any()}.
 start() ->
     application:start(?MODULE).
 
@@ -63,6 +63,7 @@ start_deps() ->
                                             ,'crypto'
                                             ,'gproc'
                                             ,'lager'
+                                            ,'whistle_config'
                                             ,'kazoo_caches'
                                             ,'kazoo_token_buckets'
                                             ,'whistle_amqp'

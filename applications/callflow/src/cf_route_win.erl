@@ -8,8 +8,7 @@
 %%%-------------------------------------------------------------------
 -module(cf_route_win).
 
--export([handle_req/2
-         ,maybe_restrict_call/2
+-export([execute_callflow/2
         ]).
 
 -include("callflow.hrl").
@@ -24,21 +23,9 @@
               )
        ).
 
--spec handle_req(wh_json:object(), wh_proplist()) -> _.
-handle_req(JObj, _Options) ->
-    CallId = wh_json:get_value(<<"Call-ID">>, JObj),
-    wh_util:put_callid(CallId),
-    lager:info("callflow has received a route win, taking control of the call"),
-    case whapps_call:retrieve(CallId, ?APP_NAME) of
-        {'ok', Call} ->
-            maybe_restrict_call(JObj, whapps_call:from_route_win(JObj, Call));
-        {'error', R} ->
-            lager:info("unable to find callflow during second lookup (HUH?) ~p", [R])
-    end.
-
--spec maybe_restrict_call(wh_json:object(), whapps_call:call()) ->
+-spec execute_callflow(wh_json:object(), whapps_call:call()) ->
                                  'ok' | {'ok', pid()}.
-maybe_restrict_call(JObj, Call) ->
+execute_callflow(JObj, Call) ->
     case should_restrict_call(Call) of
         'true' ->
             lager:debug("endpoint is restricted from making this call, terminate", []),
@@ -273,12 +260,18 @@ update_ccvs(Call) ->
                ,{<<"Caller-ID-Number">>, CIDNumber}
                | get_incoming_security(Call)
               ]),
-    Call1 = whapps_call:kvs_erase(['prepend_cid_name', 'prepend_cid_number'], Call),
-    whapps_call:set_custom_channel_vars(Props, Call1).
+    whapps_call:set_custom_channel_vars(Props, Call).
 
 -spec maybe_start_metaflow(whapps_call:call()) -> whapps_call:call().
+-spec maybe_start_metaflow(whapps_call:call(), api_binary()) -> whapps_call:call().
 maybe_start_metaflow(Call) ->
+    maybe_start_metaflow(Call, whapps_call:custom_channel_var(<<"Metaflow-App">>, Call)).
+
+maybe_start_metaflow(Call, 'undefined') ->
     maybe_start_endpoint_metaflow(Call, whapps_call:authorizing_id(Call)),
+    Call;
+maybe_start_metaflow(Call, App) ->
+    lager:debug("metaflow app ~s", [App]),
     Call.
 
 -spec maybe_start_endpoint_metaflow(whapps_call:call(), api_binary()) -> 'ok'.

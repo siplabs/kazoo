@@ -11,8 +11,9 @@
 -export([init/0
          ,allowed_methods/0, allowed_methods/1
          ,resource_exists/0, resource_exists/1
-         ,validate/1, validate/2
-         ,put/1
+         ,validate/1, validate/2, validate/3
+         ,put/1, put/2
+         ,post/2
          ,delete/2
          ,delete_orphaned_cccps/1
         ]).
@@ -20,6 +21,7 @@
 -include("../crossbar.hrl").
 
 -define(CB_LIST, <<"cccps/crossbar_listing">>).
+-define(AUTODIAL, <<"autodial">>).
 
 %%%===================================================================
 %%% API
@@ -69,7 +71,7 @@ init_db() ->
 allowed_methods() ->
     [?HTTP_GET, ?HTTP_PUT].
 allowed_methods(_) ->
-    [?HTTP_GET, ?HTTP_POST, ?HTTP_DELETE].
+    [?HTTP_GET, ?HTTP_PUT, ?HTTP_POST, ?HTTP_DELETE].
 
 %%--------------------------------------------------------------------
 %% @public
@@ -101,6 +103,8 @@ validate(Context) ->
     validate_cccps(Context, cb_context:req_verb(Context)).
 validate(Context, Id) ->
     validate_cccp(Context, Id, cb_context:req_verb(Context)).
+validate(Context, _Id, ?AUTODIAL) ->
+    validate_cccp(Context, ?AUTODIAL, cb_context:req_verb(Context)).
 
 -spec validate_cccps(cb_context:context(), http_method()) -> cb_context:context().
 validate_cccps(Context, ?HTTP_GET) ->
@@ -120,6 +124,15 @@ validate_cccps(Context, ?HTTP_PUT) ->
     end.
 
 -spec validate_cccp(cb_context:context(), path_token(), http_method()) -> cb_context:context().
+validate_cccp(Context, ?AUTODIAL, ?HTTP_PUT) ->
+    JObj = wh_json:from_list([{<<"Number">>, wh_json:get_value(<<"a_leg_number">>, cb_context:req_data(Context))}
+                              ,{<<"B-Leg-Number">>, wh_json:get_value(<<"b_leg_number">>, cb_context:req_data(Context))}
+                              ,{<<"Outbound-Caller-ID-Number">>, wh_json:get_value(<<"outbound_cid">>, cb_context:req_data(Context))}
+                              ,{<<"Account-ID">>, cb_context:account_id(Context)}
+                              ,{<<"Callback-Delay">>, wh_json:get_value(<<"callback_delay">>, cb_context:req_data(Context))}
+                             ]),
+    cccp_callback_sup:new(JObj),
+    cb_context:set_resp_status(Context, 'success');
 validate_cccp(Context, Id, ?HTTP_GET) ->
     read(Id, Context);
 validate_cccp(Context, Id, ?HTTP_POST) ->
@@ -127,7 +140,7 @@ validate_cccp(Context, Id, ?HTTP_POST) ->
 validate_cccp(Context, Id, ?HTTP_DELETE) ->
     read(Id, Context).
 
--spec get_auth_pin(cb_context:context()) -> {'ok', ne_binary()} | {'error', ne_binary()}.
+-spec get_auth_pin(cb_context:context()) -> {'ok', ne_binaries()} | {'error', ne_binary()}.
 get_auth_pin(Context) ->
     CID = wh_json:get_value(<<"cid">>, cb_context:req_data(Context), <<"*">>),
     NormalizedCID = wnm_util:normalize_number(CID),
@@ -145,6 +158,23 @@ get_auth_pin(Context) ->
 %%--------------------------------------------------------------------
 -spec put(cb_context:context()) -> cb_context:context().
 put(Context) ->
+    Context2 = crossbar_doc:save(Context),
+    couch_mgr:ensure_saved(?KZ_CCCPS_DB, cb_context:doc(Context2)),
+    Context2.
+
+-spec put(cb_context:context(), path_token()) -> cb_context:context().
+put(Context, ?AUTODIAL) ->
+    Context.
+
+%%--------------------------------------------------------------------
+%% @public
+%% @doc
+%% If the HTTP verb is POST, execute the actual action, usually a db save
+%% (after a merge perhaps).
+%% @end
+%%--------------------------------------------------------------------
+-spec post(cb_context:context(), path_token()) -> cb_context:context().
+post(Context, _) ->
     Context2 = crossbar_doc:save(Context),
     couch_mgr:ensure_saved(?KZ_CCCPS_DB, cb_context:doc(Context2)),
     Context2.
@@ -246,7 +276,7 @@ normalize_view_results(JObj, Acc) ->
 %% @end
 %%--------------------------------------------------------------------
 
--spec check_pin(ne_binary(), cb_context:context()) -> cb_context:context().
+-spec check_pin(ne_binaries(), cb_context:context()) -> cb_context:context().
 check_pin(AuthPin, Context) ->
     case unique_pin(AuthPin) of
         {'error', 'empty'} -> create(Context);
@@ -262,6 +292,6 @@ check_pin(AuthPin, Context) ->
             )
     end.
 
--spec unique_pin(ne_binary()) -> cccp_auth:cccp_auth_ret().
+-spec unique_pin(ne_binaries()) -> cccp_auth:cccp_auth_ret().
 unique_pin(AuthPin) ->
     cccp_auth:authorize(AuthPin, <<"cccps/pin_listing">>).

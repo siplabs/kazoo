@@ -76,6 +76,7 @@
 
 -include_lib("wh_couch.hrl").
 -include_lib("whistle_number_manager/include/wh_number_manager.hrl").
+-include_lib("whistle/include/wapi_conf.hrl").
 
 %% Throttle how many docs we bulk insert to BigCouch
 -define(MAX_BULK_INSERT, 2000).
@@ -87,7 +88,7 @@
                          ,<<"pvt_modified">>
                         ]).
 
--type db_create_options() :: [{'q',integer()} | {'n',integer()},...] | [].
+-type db_create_options() :: [{'q',integer()} | {'n',integer()}].
 
 -type ddoc() :: ne_binary() | 'all_docs' | 'design_docs'.
 
@@ -134,12 +135,12 @@ db_classification(?KZ_WEBHOOKS_DB) -> 'aggregate';
 db_classification(<<?WNM_DB_PREFIX_L, _Prefix:5/binary>>) -> 'numbers';
 db_classification(<<"numbers%2F", _Prefix:5/binary>>) -> 'numbers';
 db_classification(<<"numbers%2f", _Prefix:5/binary>>) -> 'numbers';
-db_classification(<<"account/", _AccountId:34/binary, "-", _Date:6/binary>>) -> 'modb';
-db_classification(<<"account%2F", _AccountId:38/binary, "-", _Date:6/binary>>) -> 'modb';
-db_classification(<<"account%2f", _AccountId:38/binary, "-", _Date:6/binary>>) -> 'modb';
-db_classification(<<"account/", _AccountId:34/binary>>) -> 'account';
-db_classification(<<"account%2f", _AccountId:38/binary>>) -> 'account';
-db_classification(<<"account%2F", _AccountId:38/binary>>) -> 'account';
+db_classification(?MATCH_MODB_SUFFIX_UNENCODED(_A,_B,_Rest,_Year,_Month)) -> 'modb';% these only need to match
+db_classification(?MATCH_MODB_SUFFIX_ENCODED(_A,_B,_Rest,_Year,_Month)) -> 'modb';%   "account..." then the
+db_classification(?MATCH_MODB_SUFFIX_encoded(_A,_B,_Rest,_Year,_Month)) -> 'modb';%   right size.
+db_classification(?MATCH_ACCOUNT_UNENCODED(_AccountId)) -> 'account';
+db_classification(?MATCH_ACCOUNT_encoded(_AccountId)) -> 'account';
+db_classification(?MATCH_ACCOUNT_ENCODED(_AccountId)) -> 'account';
 db_classification(?WH_RATES_DB) -> 'system';
 db_classification(?WH_OFFNET_DB) -> 'system';
 db_classification(?WH_ANONYMOUS_CDR_DB) -> 'system';
@@ -268,7 +269,7 @@ get_new_conn(Host, Port, Opts) ->
     end.
 
 -spec server_info(server()) -> {'ok', wh_json:object()} |
-                               {'error', _}.
+                               {'error', any()}.
 server_info(#server{}=Conn) -> couchbeam:server_info(Conn).
 
 -spec server_url(server()) -> ne_binary().
@@ -307,14 +308,18 @@ db_create(#server{}=Conn, DbName) ->
 db_create(#server{}=Conn, DbName, Options) ->
     case couchbeam:create_db(Conn, wh_util:to_list(DbName), [], Options) of
         {'error', _} -> 'false';
-        {'ok', _} -> 'true'
+        {'ok', _} ->
+            _ = maybe_publish_db(DbName, 'created'),
+            'true'
     end.
 
 -spec db_delete(server(), ne_binary()) -> boolean().
 db_delete(#server{}=Conn, DbName) ->
     case couchbeam:delete_db(Conn, wh_util:to_list(DbName)) of
         {'error', _} -> 'false';
-        {'ok', _} -> 'true'
+        {'ok', _} ->
+            _ = maybe_publish_db(DbName, 'deleted'),
+            'true'
     end.
 
 -spec db_replicate(server(), wh_json:object() | wh_proplist()) ->
@@ -933,7 +938,7 @@ maybe_add_pvt_type(Db, DocId, JObj) ->
 %% until 3 failed retries occur.
 %% @end
 %%------------------------------------------------------------------------------
--type retry504_ret() :: any().
+-type retry504_ret() :: _.
 %% 'ok' | ne_binary() |
 %% {'ok', wh_json:object() | wh_json:objects() |
 %%  binary() | ne_binaries() | boolean() | integer()
@@ -993,7 +998,16 @@ maybe_publish_doc(#db{}=Db, Doc, JObj) ->
         andalso should_publish_doc(Doc)
     of
         'true' ->
-            _ = wh_util:spawn(fun() -> publish_doc(Db, Doc, JObj) end),
+            _ = wh_util:spawn(fun publish_doc/3, [Db, Doc, JObj]),
+            'ok';
+        'false' -> 'ok'
+    end.
+
+-spec maybe_publish_db(ne_binary(), wapi_conf:action()) -> 'ok'.
+maybe_publish_db(DbName, Action) ->
+    case couch_mgr:change_notice() of
+        'true' ->
+            _ = wh_util:spawn(fun publish_db/2, [DbName, Action]),
             'ok';
         'false' -> 'ok'
     end.
@@ -1021,12 +1035,26 @@ publish_doc(#db{name=DbName}, Doc, JObj) ->
             end
     end.
 
+-spec publish_db(ne_binary(), wapi_conf:action()) -> 'ok'.
+publish_db(DbName, Action) ->
+    Props =
+        [{<<"Type">>, 'database'}
+         ,{<<"ID">>, DbName}
+         ,{<<"Database">>, DbName}
+         | wh_api:default_headers(<<"configuration">>
+                                  ,<<"db_", (wh_util:to_binary(Action))/binary>>
+                                  ,?CONFIG_CAT
+                                  ,<<"1.0.0">>
+                                 )
+        ],
+    Fun = fun(P) -> wapi_conf:publish_db_update(Action, DbName, P) end,
+    whapps_util:amqp_pool_send(Props, Fun).
+
 -spec publish_fields(wh_json:object()) -> wh_proplist().
 -spec publish_fields(wh_json:object(), wh_json:object()) -> wh_json:object().
 publish_fields(Doc) ->
-    [{Key, V} ||
-        Key <- ?PUBLISH_FIELDS,
-        wh_util:is_not_empty(V = wh_json:get_value(Key, Doc))
+    [{Key, V} || Key <- ?PUBLISH_FIELDS,
+                 not wh_util:is_empty(V = wh_json:get_value(Key, Doc))
     ].
 
 publish_fields(Doc, JObj) ->
@@ -1037,6 +1065,9 @@ publish(Action, Db, Doc) ->
     Type = wh_doc:type(Doc),
     Id = wh_doc:id(Doc),
 
+    IsSoftDeleted = wh_doc:is_soft_deleted(Doc),
+    EventName = doc_change_event_name(Action, IsSoftDeleted),
+
     Props =
         [{<<"ID">>, Id}
          ,{<<"Type">>, Type}
@@ -1045,9 +1076,9 @@ publish(Action, Db, Doc) ->
          ,{<<"Account-ID">>, doc_acct_id(Db, Doc)}
          ,{<<"Date-Modified">>, wh_doc:created(Doc)}
          ,{<<"Date-Created">>, wh_doc:modified(Doc)}
-         ,{<<"Is-Soft-Deleted">>, wh_doc:is_soft_deleted(Doc)}
+         ,{<<"Is-Soft-Deleted">>, IsSoftDeleted}
          | wh_api:default_headers(<<"configuration">>
-                                  ,<<"doc_", (wh_util:to_binary(Action))/binary>>
+                                  ,EventName
                                   ,?CONFIG_CAT
                                   ,<<"1.0.0">>
                                  )
@@ -1055,10 +1086,18 @@ publish(Action, Db, Doc) ->
     Fun = fun(P) -> wapi_conf:publish_doc_update(Action, Db, Type, Id, P) end,
     whapps_util:amqp_pool_send(Props, Fun).
 
+-spec doc_change_event_name(wapi_conf:action(), boolean()) -> ne_binary().
+doc_change_event_name(_Action, 'true') ->
+    ?DOC_DELETED;
+doc_change_event_name(Action, 'false') ->
+    <<"doc_", (wh_util:to_binary(Action))/binary>>.
+
 -spec doc_acct_id(ne_binary(), wh_json:object()) -> ne_binary().
 doc_acct_id(Db, Doc) ->
-    wh_doc:account_id(Doc, wh_util:format_account_id(Db, 'raw')).
-
+    case wh_doc:account_id(Doc) of
+        'undefined' -> wh_util:format_account_id(Db, 'raw');
+        AccountId -> AccountId
+    end.
 
 -spec default_copy_function(boolean()) -> copy_function().
 default_copy_function('true') -> fun ensure_saved/4;
@@ -1091,7 +1130,9 @@ copy_doc(#server{}=Conn, CopySpec, CopyFun, Options) ->
                 } = CopySpec,
     case open_doc(Conn, SourceDbName, SourceDocId, Options) of
         {'ok', SourceDoc} ->
-            Props = [{<<"_id">>, DestDocId}],
+            Props = [{<<"_id">>, DestDocId}
+                     | maybe_set_account_db(wh_doc:account_db(SourceDoc), SourceDbName, DestDbName)
+                    ],
             DestinationDoc = wh_json:set_values(Props, wh_json:delete_keys(?DELETE_KEYS, SourceDoc)),
             case CopyFun(Conn, DestDbName, DestinationDoc, Options) of
                 {'ok', _JObj} ->
@@ -1104,7 +1145,7 @@ copy_doc(#server{}=Conn, CopySpec, CopyFun, Options) ->
 
 -spec copy_attachments(server(), copy_doc(), {wh_json:json_terms(), wh_json:keys()}) ->
                               {'ok', ne_binary()} |
-                              {'error', _}.
+                              {'error', any()}.
 copy_attachments(#server{}=Conn, CopySpec, {[], []}) ->
     #wh_copy_doc{dest_dbname = DestDbName
                  ,dest_doc_id = DestDocId
@@ -1127,6 +1168,11 @@ copy_attachments(#server{}=Conn, CopySpec, {[JObj | JObjs], [Key | Keys]}) ->
             end;
         Error -> Error
     end.
+
+-spec maybe_set_account_db(api_binary(), ne_binary(), ne_binary()) -> wh_proplist().
+maybe_set_account_db(DB, DB, DestDbName) ->
+    [{<<"pvt_account_db">>, DestDbName}];
+maybe_set_account_db(_1, _, _) -> [].
 
 -spec move_doc(server(), copy_doc(), wh_proplist()) ->
                       {'ok', wh_json:object()} |

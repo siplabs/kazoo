@@ -104,7 +104,7 @@ add_channel(Broker, Connection, Channel) when is_pid(Channel), is_binary(Broker)
 
 -spec release(pid()) -> 'ok'.
 release(Consumer) ->
-    gen_server:call(?MODULE, {'release_handlers', Consumer}).
+    gen_server:call(?MODULE, {'release_handlers', Consumer}, 'infinity').
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -183,12 +183,9 @@ handle_cast({'maybe_reassign', Consumer}, State) ->
     {'noreply', State};
 handle_cast({'maybe_defer_reassign', #wh_amqp_assignment{timestamp=Timestamp
                                                          ,consumer=Consumer
+                                                         ,type=Type
                                                         }}, State) ->
-    Props = [{#wh_amqp_assignment.channel, 'undefined'}
-             ,{#wh_amqp_assignment.channel_ref, 'undefined'}
-             ,{#wh_amqp_assignment.connection, 'undefined'}
-             ,{#wh_amqp_assignment.reconnect, 'true'}
-            ],
+    Props = reassign_props(Type),
     ets:update_element(?TAB, Timestamp, Props),
     _ = maybe_reassign(Consumer),
     {'noreply', State};
@@ -322,7 +319,7 @@ maybe_reassign(Consumer) ->
 
 
 
--spec maybe_reassign(wh_amqp_assignment(), _) -> 'undefined' | wh_amqp_assignment().
+-spec maybe_reassign(wh_amqp_assignment(), any()) -> 'undefined' | wh_amqp_assignment().
 maybe_reassign(_, 'undefined') -> 'undefined';
 maybe_reassign(_, '$end_of_table') -> 'undefined';
 maybe_reassign(#wh_amqp_assignment{consumer=_Consumer}=ConsumerAssignment
@@ -651,7 +648,7 @@ notify_consumer(#wh_amqp_assignment{consumer=Consumer
 notify_watchers(#wh_amqp_assignment{watchers=Watchers}=Assignment) ->
     notify_watchers(Assignment, sets:to_list(Watchers)).
 
--spec notify_watchers(wh_amqp_assignment(), [pid(),...] | []) -> wh_amqp_assignment().
+-spec notify_watchers(wh_amqp_assignment(), [pid()]) -> wh_amqp_assignment().
 notify_watchers(#wh_amqp_assignment{}=Assignment, []) ->
     Assignment#wh_amqp_assignment{watchers=sets:new(), reconnect='false'};
 notify_watchers(#wh_amqp_assignment{}=Assignment, [Watcher|Watchers]) ->
@@ -714,15 +711,15 @@ reserve(Consumer, _, 'float') ->
 %% @end
 %%--------------------------------------------------------------------
 -type down_match() :: {'channel' | 'consumer', wh_amqp_assignment()}.
--type down_matches() :: [down_match(),...] | [].
+-type down_matches() :: [down_match()].
 
--spec handle_down_msg(down_matches(), _) -> 'ok'.
+-spec handle_down_msg(down_matches(), any()) -> 'ok'.
 handle_down_msg([], _) -> 'ok';
 handle_down_msg([Match|Matches], Reason) ->
     _ = handle_down_match(Match, Reason),
     handle_down_msg(Matches, Reason).
 
--spec handle_down_match(down_match(), _) -> 'ok'.
+-spec handle_down_match(down_match(), any()) -> 'ok'.
 handle_down_match({'consumer', #wh_amqp_assignment{consumer=Consumer}=Assignment}
                   ,_Reason) ->
     lager:debug("consumer ~p, went down without closing channel: ~p"
@@ -757,7 +754,7 @@ handle_down_match({'channel', #wh_amqp_assignment{channel=Channel
                 ,[Channel, Broker, Consumer, Reason]),
     maybe_defer_reassign(Assignment, Reason).
 
--spec maybe_defer_reassign(#wh_amqp_assignment{}, term()) -> 'ok'.
+-spec maybe_defer_reassign(#wh_amqp_assignment{}, any()) -> 'ok'.
 maybe_defer_reassign(#wh_amqp_assignment{}=Assignment
                     ,{'shutdown',{'server_initiated_close', 404, _Msg}}) ->
     lager:debug("defer channel reassign for ~p ms", [?SERVER_RETRY_PERIOD]),
@@ -768,14 +765,26 @@ maybe_defer_reassign(#wh_amqp_assignment{}=Assignment
       end);
 maybe_defer_reassign(#wh_amqp_assignment{timestamp=Timestamp
                                          ,consumer=Consumer
+                                         ,type=Type
                                         }, _) ->
-    Props = [{#wh_amqp_assignment.channel, 'undefined'}
-             ,{#wh_amqp_assignment.channel_ref, 'undefined'}
-             ,{#wh_amqp_assignment.connection, 'undefined'}
-             ,{#wh_amqp_assignment.reconnect, 'true'}
-            ],
+    Props = reassign_props(Type),
     ets:update_element(?TAB, Timestamp, Props),
     gen_server:cast(?MODULE, {'maybe_reassign', Consumer}).
+
+-spec reassign_props(atom()) -> wh_proplist().
+reassign_props('float') ->
+    [{#wh_amqp_assignment.channel, 'undefined'}
+     ,{#wh_amqp_assignment.channel_ref, 'undefined'}
+     ,{#wh_amqp_assignment.connection, 'undefined'}
+     ,{#wh_amqp_assignment.reconnect, 'true'}
+     ,{#wh_amqp_assignment.broker, 'undefined'}
+    ];
+reassign_props('sticky') ->
+    [{#wh_amqp_assignment.channel, 'undefined'}
+     ,{#wh_amqp_assignment.channel_ref, 'undefined'}
+     ,{#wh_amqp_assignment.connection, 'undefined'}
+     ,{#wh_amqp_assignment.reconnect, 'true'}
+    ].
 
 %%--------------------------------------------------------------------
 %% @private

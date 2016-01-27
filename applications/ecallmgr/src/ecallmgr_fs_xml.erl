@@ -49,13 +49,11 @@ sip_profiles_xml(JObj) ->
 
     {'ok', xmerl:export([SectionEl], 'fs_xml')}.
 
+-spec sip_channel_xml(wh_proplist()) -> {'ok', iolist()}.
 sip_channel_xml(Props) ->
     ParamsEl = params_el([param_el(K, V) || {K, V} <- Props]),
-
     ChannelEl = channel_el(props:get_value(<<"uuid">>, Props), ParamsEl),
-
     SectionEl = section_el(<<"channels">>, ChannelEl),
-
     {'ok', xmerl:export([SectionEl], 'fs_xml')}.
 
 -spec authn_resp_xml(api_terms()) -> {'ok', iolist()}.
@@ -172,8 +170,9 @@ conference_resp_xml([_|_]=Resp) ->
     ConfigurationEl = config_el(<<"conference.conf">>, <<"Built by Kazoo">>
                                 ,[AdvertiseEl, ProfilesEl, CallerControlsEl, ChatPermsEl]
                                ),
+    SectionEl = section_el(<<"configuration">>, ConfigurationEl),
+    {'ok', xmerl:export([SectionEl], 'fs_xml')};
 
-    {'ok', xmerl:export([ConfigurationEl], 'fs_xml')};
 conference_resp_xml(Resp) -> conference_resp_xml(wh_json:to_proplist(Resp)).
 
 conference_profiles_xml(Profiles) when is_list(Profiles) ->
@@ -487,6 +486,12 @@ get_channel_vars({<<"Forward-IP">>, V}, Vars) ->
 get_channel_vars({<<"Enable-T38-Gateway">>, Direction}, Vars) ->
     [<<"execute_on_answer='t38_gateway ", Direction/binary, "'">> | Vars];
 
+get_channel_vars({<<"Confirm-File">>, V}, Vars) ->
+    [list_to_binary(["group_confirm_file='"
+        ,wh_util:to_list(ecallmgr_util:media_path(V, 'extant', get('callid'), wh_json:new()))
+        ,"'"
+    ]) | Vars];
+
 get_channel_vars({AMQPHeader, V}, Vars) when not is_list(V) ->
     case lists:keyfind(AMQPHeader, 1, ?SPECIAL_CHANNEL_VARS) of
         'false' -> Vars;
@@ -631,9 +636,12 @@ config_el(Name, Desc, Content) ->
                 ,content=Content
                }.
 
+-spec channel_el(api_binary(), xml_el() | xml_els()) -> xml_el() | xml_els().
+channel_el('undefined', Content) -> Content;
 channel_el(UUID, Content) ->
     channel_el(UUID, <<"channel ", (wh_util:to_binary(UUID))/binary, " tracked by kazoo">>, Content).
 
+-spec channel_el(ne_binary(), ne_binary(), xml_el() | xml_els()) -> xml_el().
 channel_el(UUID, Desc, #xmlElement{}=Content) ->
     channel_el(UUID, Desc, [Content]);
 channel_el(UUID, Desc, Content) ->
@@ -711,7 +719,14 @@ params_el(Children) ->
 
 -spec param_el(xml_attrib_value(), xml_attrib_value()) -> xml_el().
 param_el(<<"moh-sound">> = Name, MediaName) ->
-    Value = ecallmgr_util:media_path(MediaName, get('callid'), wh_json:new()),
+    Value = ecallmgr_util:media_path(MediaName, wh_util:get_callid(), wh_json:new()),
+    #xmlElement{name='param'
+                ,attributes=[xml_attrib('name', Name)
+                             ,xml_attrib('value', Value)
+                            ]
+               };
+param_el(<<"max-members-sound">> = Name, MediaName) ->
+    Value = ecallmgr_util:media_path(MediaName, wh_util:get_callid(), wh_json:new()),
     #xmlElement{name='param'
                 ,attributes=[xml_attrib('name', Name)
                              ,xml_attrib('value', Value)

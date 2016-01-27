@@ -16,7 +16,9 @@
 -export([get_modb/1, get_modb/2, get_modb/3]).
 -export([maybe_archive_modb/1]).
 -export([refresh_views/1]).
--export([create/1]).
+-export([create/1
+         ,add_routine/1
+        ]).
 -export([maybe_delete/2]).
 -export([get_range/3]).
 -export([get_year_month_sequence/3, get_year_month_sequence/4]).
@@ -85,7 +87,7 @@ get_results_missing_db(Account, View, ViewOptions, Retry) ->
 -spec open_doc(ne_binary(), ne_binary(), wh_year() | ne_binary(), wh_month() | ne_binary()) ->
                       {'ok', wh_json:object()} |
                       {'error', atom()}.
-open_doc(Account, <<Year:4/binary, Month:2/binary, "-", _/binary>> = DocId) ->
+open_doc(Account, ?MATCH_MODB_PREFIX(Year,Month,_) = DocId) ->
     AccountMODb = get_modb(Account, wh_util:to_integer(Year), wh_util:to_integer(Month)),
     couch_open(AccountMODb, DocId);
 open_doc(Account, DocId) ->
@@ -143,7 +145,8 @@ save_doc(Account, Doc, Year, Month) ->
                         {'ok', wh_json:object()} |
                         {'error', atom()}.
 couch_save(AccountMODb, _Doc, 0) ->
-    lager:error("failed to save doc in ~p", AccountMODb);
+    lager:error("failed to save doc in ~p", AccountMODb),
+    {'error', 'doc_save_failed'};
 couch_save(AccountMODb, Doc, Retry) ->
      EncodedMODb = wh_util:format_account_modb(AccountMODb, 'encoded'),
     case couch_mgr:save_doc(EncodedMODb, Doc) of
@@ -168,13 +171,13 @@ couch_save(AccountMODb, Doc, Retry) ->
                       ne_binary().
 -spec get_modb(ne_binary(), wh_year() | ne_binary(), wh_month() | ne_binary()) ->
                       ne_binary().
-get_modb(<<_:32/binary, "-", _:4/binary, _:2/binary>>=AccountMODb) ->
+get_modb(?MATCH_MODB_SUFFIX_RAW(_,_,_) = AccountMODb) ->
     AccountMODb;
 get_modb(Account) ->
     {Year, Month, _} = erlang:date(),
     get_modb(Account, Year, Month).
 
-get_modb(<<_:32/binary, "-", _:4/binary, _:2/binary>>=AccountMODb, _) ->
+get_modb(?MATCH_MODB_SUFFIX_RAW(_,_,_) = AccountMODb, _) ->
     AccountMODb;
 get_modb(Account, Props) when is_list(Props) ->
     case {props:get_value('month', Props)
@@ -190,7 +193,7 @@ get_modb(Account, Props) when is_list(Props) ->
 get_modb(Account, Timestamp) ->
     wh_util:format_account_mod_id(Account, Timestamp).
 
-get_modb(<<_:32/binary, "-", _:4/binary, _:2/binary>>=AccountMODb, _Year, _Month) ->
+get_modb(?MATCH_MODB_SUFFIX_RAW(_,_,_) = AccountMODb, _Year, _Month) ->
     AccountMODb;
 get_modb(Account, Year, Month) ->
     wh_util:format_account_mod_id(Account, Year, Month).
@@ -202,7 +205,7 @@ get_modb(Account, Year, Month) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec maybe_create(ne_binary()) -> boolean().
-maybe_create(<<_:32/binary, "-", Year:4/binary, Month:2/binary>>=AccountMODb) ->
+maybe_create(?MATCH_MODB_SUFFIX_RAW(_,Year,Month) = AccountMODb) ->
     {Y, M, _} = erlang:date(),
     case {wh_util:to_binary(Y), wh_util:pad_month(M)} of
         {Year, Month} ->
@@ -260,15 +263,24 @@ fetch_modb_views() ->
 -spec create_routines(ne_binary()) -> 'ok'.
 create_routines(AccountMODb) ->
     Routines = whapps_config:get(?CONFIG_CAT, <<"routines">>, []),
-    lists:foldl(
-        fun(Mod, _) ->
-            Module = wh_util:to_atom(Mod),
-            _ = Module:modb(AccountMODb),
+    _ = [run_routine(AccountMODb, Routine) || Routine <- Routines],
+    'ok'.
+
+-spec run_routine(ne_binary(), ne_binary()) -> any().
+run_routine(AccountMODb, Routine) ->
+    Module = wh_util:to_atom(Routine),
+    _ = Module:modb(AccountMODb).
+
+-spec add_routine(ne_binary() | atom()) -> 'ok'.
+add_routine(Module) ->
+    Routine = wh_util:to_binary(Module),
+    Routines = whapps_config:get(?CONFIG_CAT, <<"routines">>, []),
+    case lists:member(Routine, Routines) of
+        'true' -> 'ok';
+        'false' ->
+            whapps_config:set_default(?CONFIG_CAT, <<"routines">>, [Routine | Routines]),
             'ok'
-        end
-        ,'ok'
-        ,Routines
-    ).
+    end.
 
 %%--------------------------------------------------------------------
 %% @public

@@ -32,7 +32,7 @@ start_link() ->
 %% Starts the application
 %% @end
 %%--------------------------------------------------------------------
--spec start() -> 'ok' | {'error', _}.
+-spec start() -> 'ok' | {'error', any()}.
 start() ->
     whapps_controller:start_app('ecallmgr').
 
@@ -60,6 +60,7 @@ start_deps() ->
                                                 ,'lager'
                                                 ,'gproc'
                                                 ,'ibrowse'
+                                                ,'whistle_config'
                                                 ,'whistle_amqp'
                                                 ,'whistle_stats'
                                                ]],

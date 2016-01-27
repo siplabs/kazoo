@@ -328,6 +328,35 @@ remove_acl(Name, 'false') ->
                ,fun ecallmgr_config:set_node/2
               ).
 
+-spec maybe_reload_acls(text(), text(), non_neg_integer()) -> 'no_return'.
+maybe_reload_acls(_Name, _Action, 0) ->
+    io:format("Timeout during updating ACLs, try reload ACLs and flush config later:~n"),
+    io:format("Use these commands:~n"),
+    io:format("# sup whapps_config flush~n"),
+    io:format("# sup -necallmgr ecallmgr_maintenance reload_acls~n"),
+    'no_return';
+maybe_reload_acls(Name, Action, Tries) ->
+    case has_acl(Name, Action, get_acls()) of
+        'true' ->
+            ecallmgr_config:flush(<<"acls">>),
+            reload_acls(),
+            'no_return';
+        'false' ->
+            io:format("Trying to reload ACLs for ~B more times~n", [Tries]),
+            timer:sleep(500),
+            maybe_reload_acls(Name, Action, Tries - 1)
+    end.
+
+-spec has_acl(text(), text(), wh_json:object()) -> 'true' | 'false'.
+has_acl(Name, Action, ACLs) ->
+    FilteredACLs = filter_acls(ACLs),
+    _ = case wh_json:get_value(Name, FilteredACLs) of
+        'undefined' when Action =:= 'modify' -> 'false';
+        'undefined' when Action =:= 'remove' -> 'true';
+        _ACL when Action =:= 'modify' -> 'true';
+        _ACL when Action =:= 'remove' -> 'false'
+    end.
+
 -spec reload_acls() -> 'no_return'.
 reload_acls() ->
     _ = [begin
@@ -508,7 +537,7 @@ check_sync(Username, Realm) ->
                                   ,wh_util:to_binary(Realm)
                                  ).
 
--spec add_fs_node(text(), ne_binaries(), function()) -> 'ok' | {'error', _}.
+-spec add_fs_node(text(), ne_binaries(), function()) -> 'ok' | {'error', any()}.
 add_fs_node(FSNode, FSNodes, ConfigFun) when not is_binary(FSNode) ->
     add_fs_node(wh_util:to_binary(FSNode), FSNodes, ConfigFun);
 add_fs_node(FSNode, FSNodes, ConfigFun) ->
@@ -521,7 +550,7 @@ add_fs_node(FSNode, FSNodes, ConfigFun) ->
         end,
     ecallmgr_fs_nodes:add(wh_util:to_atom(FSNode, 'true')).
 
--spec remove_fs_node(text(), ne_binaries(), function()) -> 'ok' | {'error', _}.
+-spec remove_fs_node(text(), ne_binaries(), function()) -> 'ok' | {'error', any()}.
 remove_fs_node(FSNode, FSNodes, ConfigFun) when not is_binary(FSNode) ->
     remove_fs_node(wh_util:to_binary(FSNode), FSNodes, ConfigFun);
 remove_fs_node(FSNode, FSNodes, ConfigFun) ->
@@ -554,9 +583,7 @@ modify_acls(Name, IP, ACLS, ACLFun, ConfigFun) ->
                 ,wh_json:get_value(<<"type">>, ACL)
                ]),
     ConfigFun(<<"acls">>, wh_json:set_value(Name, ACL, filter_acls(ACLS))),
-    ecallmgr_config:flush(<<"acls">>),
-    reload_acls(),
-    'no_return'.
+    maybe_reload_acls(Name, 'modify', 4).
 
 remove_acl(Name, ACLs, ConfigFun) ->
     FilteredACLs = filter_acls(ACLs),
@@ -570,9 +597,7 @@ remove_acl(Name, ACLs, ConfigFun) ->
                            ]),
                 ConfigFun(<<"acls">>, wh_json:delete_key(Name, FilteredACLs))
         end,
-    ecallmgr_config:flush(<<"acls">>),
-    reload_acls(),
-    'no_return'.
+    maybe_reload_acls(Name, 'remove', 4).
 
 -spec list_acls(wh_json:object(), api_binary()) -> 'no_return'.
 list_acls(ACLs, Network) ->

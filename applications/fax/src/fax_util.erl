@@ -15,6 +15,7 @@
 -export([notify_email_list/3]).
 -export([filter_numbers/1]).
 -export([is_valid_caller_id/2]).
+-export([normalize_content_type/1]).
 
 -include("fax.hrl").
 
@@ -44,7 +45,7 @@ collect_channel_props(JObj, List, Acc) ->
 -spec collect_channel_prop(ne_binary(), wh_json:object()) ->
                                   {wh_json:key(), wh_json:json_term()}.
 collect_channel_prop(<<"Hangup-Code">> = Key, JObj) ->
-    <<"sip:", Code/binary>> = wh_json:get_value(Key, JObj),
+    <<"sip:", Code/binary>> = wh_json:get_value(Key, JObj, <<"sip:500">>),
     {Key, Code};
 collect_channel_prop(Key, JObj) ->
     {Key, wh_json:get_value(Key, JObj)}.
@@ -124,7 +125,7 @@ maybe_attach_extension(A, CT) ->
 
 -spec save_fax_docs(wh_json:objects(), binary(), ne_binary()) ->
                            'ok' |
-                           {'error', term()}.
+                           {'error', any()}.
 save_fax_docs([], _FileContents, _CT) -> 'ok';
 save_fax_docs([Doc|Docs], FileContents, CT) ->
     case couch_mgr:save_doc(?WH_FAXES_DB, Doc) of
@@ -143,12 +144,12 @@ save_fax_docs([Doc|Docs], FileContents, CT) ->
                                  {'ok', wh_json:object()} |
                                  {'error', ne_binary()}.
 save_fax_attachment(JObj, FileContents, CT) ->
-    save_fax_attachment(JObj, FileContents, CT, whapps_config:get_integer(?CONFIG_CAT, <<"max_storage_retry">>, 5)).
+    MaxStorageRetry = whapps_config:get_integer(?CONFIG_CAT, <<"max_storage_retry">>, 5),
+    save_fax_attachment(JObj, FileContents, CT, MaxStorageRetry).
 
 save_fax_attachment(JObj, _FileContents, _CT, 0) ->
     DocId = wh_doc:id(JObj),
-    Rev = wh_doc:revision(JObj),
-    lager:debug("max retry saving attachment on fax id ~s rev ~s",[DocId, Rev]),
+    lager:debug("max retry saving attachment on fax id ~s rev ~s",[DocId, wh_doc:revision(JObj)]),
     {'error', <<"max retry saving attachment">>};
 save_fax_attachment(JObj, FileContents, CT, Count) ->
     DocId = wh_doc:id(JObj),
@@ -223,3 +224,20 @@ is_valid_caller_id(Number, AccountId) ->
 
 -spec is_digit(integer()) -> boolean().
 is_digit(N) -> N >= $0 andalso N =< $9.
+
+-spec normalize_content_type(text()) -> ne_binary().
+normalize_content_type(<<"image/tif">>) -> <<"image/tiff">>;
+normalize_content_type(<<"image/x-tif">>) -> <<"image/tiff">>;
+normalize_content_type(<<"image/tiff">>) -> <<"image/tiff">>;
+normalize_content_type(<<"image/x-tiff">>) -> <<"image/tiff">>;
+normalize_content_type(<<"application/tif">>) -> <<"image/tiff">>;
+normalize_content_type(<<"apppliction/x-tif">>) -> <<"image/tiff">>;
+normalize_content_type(<<"apppliction/tiff">>) -> <<"image/tiff">>;
+normalize_content_type(<<"apppliction/x-tiff">>) -> <<"image/tiff">>;
+normalize_content_type(<<"application/pdf">>) -> <<"application/pdf">>;
+normalize_content_type(<<"application/x-pdf">>) -> <<"application/pdf">>;
+normalize_content_type(<<"text/pdf">>) -> <<"application/pdf">>;
+normalize_content_type(<<"text/x-pdf">>) -> <<"application/pdf">>;
+normalize_content_type(<<_/binary>> = Else) -> Else;
+normalize_content_type(CT) ->
+    normalize_content_type(wh_util:to_binary(CT)).

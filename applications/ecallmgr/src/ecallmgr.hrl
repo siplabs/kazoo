@@ -17,7 +17,7 @@
 
 -define(DEFAULT_FREESWITCH_CONTEXT, ecallmgr_config:get(<<"freeswitch_context">>, <<"context_2">>)).
 
--define(SIP_INTERFACE, "sofia/sipinterface_1/").
+-define(SIP_INTERFACE, "sipinterface_1").
 -define(DEFAULT_FS_PROFILE, "sipinterface_1").
 -define(DEFAULT_FS_TECHNOLOGY, "sofia").
 -define(DEFAULT_FS_DIALPLAN, "XML").
@@ -82,7 +82,7 @@
                  }).
 
 -type channel() :: #channel{}.
--type channels() :: [channel(),...] | [].
+-type channels() :: [channel()].
 
 -record(conference, {name :: api_binary() | '$1' | '_'
                      ,uuid :: api_binary() | '$1' | '_'
@@ -105,7 +105,7 @@
                     }).
 
 -type conference() :: #conference{}.
--type conferences() :: [conference(),...] | [].
+-type conferences() :: [conference()].
 
 -record(participant, {uuid :: api_binary() | '$1' | '_'
                       ,node :: atom() | '$2' | '_'
@@ -126,7 +126,7 @@
                       ,is_moderator = 'false' :: boolean() | '_'
                      }).
 -type participant() :: #participant{}.
--type participants() :: [participant(),...] | [].
+-type participants() :: [participant()].
 
 -define(DEFAULT_REALM, ecallmgr_config:get(<<"default_realm">>, <<"nodomain.com">>)).
 -define(MAX_TIMEOUT_FOR_NODE_RESTART, ecallmgr_config:get_integer(<<"max_timeout_for_node_restart">>, 10 * ?MILLISECONDS_IN_SECOND)). % 10 seconds
@@ -195,7 +195,8 @@
                                ,{<<"Presence-ID">>, <<"presence_id">>}
                                ,{<<"Inherit-Codec">>, <<"inherit_codec">>}
                                ,{<<"From-URI">>, <<"sip_from_uri">>}
-                               ,{<<"Bypass-Media">>, <<"bypass_media">>}
+                               ,{<<"Bypass-Media">>, <<"bypass_media_after_bridge">>}
+                               ,{<<"Bridge-Generate-Comfort-Noise">>,<<"bridge_generate_comfort_noise">>}
                                ,{<<"Origination-UUID">>, <<"origination_uuid">>}
                                ,{<<"Ignore-Display-Updates">>, <<"ignore_display_updates">>}
                                ,{<<"Eavesdrop-Group-ID">>, <<"eavesdrop_group">>}
@@ -255,7 +256,7 @@
                                ,{<<"conference_member_nospeak_check">>, <<"conference_member_nospeak_check">>}
                                ,{<<"Fax-Doc-ID">>, <<"fax_doc_id">>}
                                ,{<<"Fax-Doc-DB">>, <<"fax_doc_database">>}
-                               ,{<<"default_langauge">>, <<"default_language">>}
+                               ,{<<"default_language">>, <<"default_language">>}
                                ,{<<"Default-Language">>, <<"default_language">>}
                               ]).
 
@@ -420,6 +421,8 @@
 
 -define(SEPARATOR_SIMULTANEOUS, <<",">>).
 -define(SEPARATOR_SINGLE, <<"|">>).
+
+-define(CHANNEL_VARS_EXT, "Execute-Extension-Original-").
 
 -define(ECALLMGR_HRL, 'true').
 -endif.

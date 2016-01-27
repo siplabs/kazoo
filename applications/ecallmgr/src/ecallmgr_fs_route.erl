@@ -138,6 +138,9 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_info({'fetch', 'chatplan', Something, Key, Value, Id, ['undefined' | Data]}, State) ->
+    MsgId = wh_util:rand_hex_binary(16),
+    handle_info({'fetch', 'chatplan', Something, Key, Value, Id, [MsgId, {<<"Unique-ID">>, MsgId} | Data]}, State);
 handle_info({'fetch', _Section, _Something, _Key, _Value, Id, ['undefined' | _Data]}, #state{node=Node}=State) ->
     lager:warning("fetch unknown section from ~s: ~p So: ~p, K: ~p V: ~p Id: ~s"
                   ,[Node, _Section, _Something, _Key, _Value, Id]),
@@ -154,22 +157,22 @@ handle_info({'fetch', Section, _Tag, _Key, _Value, FSId, [CallId | FSData]}, #st
         {'dialplan', <<"REQUEST_PARAMS">>, _SubClass, _Context} ->
             %% TODO: move this to a supervisor somewhere
             lager:info("processing dialplan fetch request ~s (call ~s) from ~s", [FSId, CallId, Node]),
-            _ = wh_util:spawn(?MODULE, 'process_route_req', [Section, Node, FSId, CallId, FSData]),
+            _ = wh_util:spawn(fun process_route_req/5, [Section, Node, FSId, CallId, FSData]),
             {'noreply', State, 'hibernate'};
         {'chatplan', <<"CUSTOM">>, <<"KZ::", _/binary>>, _Context} ->
             %% TODO: move this to a supervisor somewhere
             lager:info("processing chatplan fetch request ~s (call ~s) from ~s", [FSId, CallId, Node]),
-            _ = wh_util:spawn(?MODULE, 'process_route_req', [Section, Node, FSId, CallId, init_message_props(FSData)]),
+            _ = wh_util:spawn(fun process_route_req/5, [Section, Node, FSId, CallId, init_message_props(FSData)]),
             {'noreply', State, 'hibernate'};
         {'chatplan', <<"REQUEST_PARAMS">>, _SubClass, _Context} ->
             %% TODO: move this to a supervisor somewhere
             lager:info("processing chatplan fetch request ~s (call ~s) from ~s", [FSId, CallId, Node]),
-            _ = wh_util:spawn(?MODULE, 'process_route_req', [Section, Node, FSId, CallId, init_message_props(FSData)]),
+            _ = wh_util:spawn(fun process_route_req/5, [Section, Node, FSId, CallId, init_message_props(FSData)]),
             {'noreply', State, 'hibernate'};
         {'chatplan', <<"MESSAGE">>, _SubClass, _Context} ->
             %% TODO: move this to a supervisor somewhere
             lager:info("processing chatplan fetch request ~s (call ~s) from ~s", [FSId, CallId, Node]),
-            _ = wh_util:spawn(?MODULE, 'process_route_req', [Section, Node, FSId, CallId, init_message_props(FSData)]),
+            _ = wh_util:spawn(fun process_route_req/5, [Section, Node, FSId, CallId, init_message_props(FSData)]),
             {'noreply', State, 'hibernate'};
         {_, _Other, _, _Context} ->
             lager:debug("ignoring ~s event ~s in context ~s from ~s", [Section, _Other, _Context, Node]),
@@ -209,7 +212,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
--spec should_expand_var(term()) -> boolean().
+-spec should_expand_var(any()) -> boolean().
 should_expand_var({<<?CHANNEL_VAR_PREFIX, _/binary>>, _}) -> 'true';
 should_expand_var({<<"sip_", _/binary>>, _}) -> 'true';
 should_expand_var(_) -> 'false'.
@@ -223,9 +226,15 @@ init_message_props(Props) ->
 
 -spec add_message_missing_props(wh_proplist()) -> wh_proplist().
 add_message_missing_props(Props) ->
-    lists:foldl(fun(A,B) -> [A | B] end, Props,
+    lists:foldl(fun({K, _V}= A,B) ->
+                        case props:get_value(K, Props) of
+                            'undefined' -> [A | B];
+                            _Else -> B
+                        end
+                end, Props,
                 [{<<"Call-Direction">>, <<"outbound">>}
                  ,{<<"Resource-Type">>,<<"sms">>}
+                 ,{<<"Message-ID">>, wh_util:rand_hex_binary(16)}
                  ,{<<"Caller-Caller-ID-Number">>, props:get_value(<<"from_user">>, Props)}
                  ,{<<"Caller-Destination-Number">>, props:get_value(<<"to_user">>, Props)}
                 ]).
@@ -257,10 +266,8 @@ process_route_req(Section, Node, FetchId, CallId, Props) ->
 
 -spec search_for_route(atom(), atom(), ne_binary(), ne_binary(), wh_proplist()) -> 'ok'.
 search_for_route(Section, Node, FetchId, CallId, Props) ->
-    _ = wh_util:spawn('ecallmgr_fs_authz', 'authorize', [props:set_value(<<"Call-Setup">>, <<"true">>, Props)
-                                                         ,CallId
-                                                         ,Node
-                                                        ]),
+    SetupCall = props:set_value(<<"Call-Setup">>, <<"true">>, Props),
+    _ = wh_util:spawn(fun ecallmgr_fs_authz:authorize/3, [SetupCall, CallId, Node]),
     ReqResp = wh_amqp_worker:call(route_req(CallId, FetchId, Props, Node)
                                   ,fun wapi_route:publish_req/1
                                   ,fun wapi_route:is_actionable_resp/1
@@ -333,7 +340,7 @@ reply_affirmative(Section, Node, FetchId, CallId, JObj) ->
 -spec maybe_start_call_handling(atom(), ne_binary(), ne_binary(), wh_json:object()) -> 'ok'.
 maybe_start_call_handling(Node, FetchId, CallId, JObj) ->
     case wh_json:get_value(<<"Method">>, JObj) of
-        <<"error">> -> 'ok';
+        <<"error">> -> lager:debug("sent error response to ~s, not starting call handling", [Node]);
         <<"sms">> -> start_message_handling(Node, FetchId, CallId, JObj);
         _Else -> start_call_handling(Node, FetchId, CallId, JObj)
     end.
@@ -343,13 +350,16 @@ start_call_handling(Node, FetchId, CallId, JObj) ->
     ServerQ = wh_json:get_value(<<"Server-ID">>, JObj),
     CCVs =
         wh_json:set_values(
-            [{<<"Application-Name">>, wh_json:get_value(<<"App-Name">>, JObj)}
-             ,{<<"Application-Node">>, wh_json:get_value(<<"Node">>, JObj)}
-            ]
-            ,wh_json:get_value(<<"Custom-Channel-Vars">>, JObj, wh_json:new())
-        ),
-    _ = ecallmgr_call_sup:start_event_process(Node, CallId),
-    _ = ecallmgr_call_sup:start_control_process(Node, CallId, FetchId, ServerQ, CCVs),
+          [{<<"Application-Name">>, wh_json:get_value(<<"App-Name">>, JObj)}
+           ,{<<"Application-Node">>, wh_json:get_value(<<"Node">>, JObj)}
+          ]
+          ,wh_json:get_value(<<"Custom-Channel-Vars">>, JObj, wh_json:new())
+         ),
+    _Evt = ecallmgr_call_sup:start_event_process(Node, CallId),
+    _Ctl = ecallmgr_call_sup:start_control_process(Node, CallId, FetchId, ServerQ, CCVs),
+
+    lager:debug("started event ~p and control ~p processes", [_Evt, _Ctl]),
+
     ecallmgr_util:set(Node, CallId, wh_json:to_proplist(CCVs)).
 
 -spec start_message_handling(atom(), ne_binary(), ne_binary(), wh_json:object()) -> 'ok'.

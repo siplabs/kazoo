@@ -147,7 +147,7 @@ handle_info(_Info, State) ->
     lager:debug("unhandled msg: ~p", [_Info]),
     {'noreply', State}.
 
--spec check_then_process_account(ne_binary(), {'ok', wh_json:object()} | {'error',_}) -> 'ok'.
+-spec check_then_process_account(ne_binary(), {'ok', wh_json:object()} | {'error',any()}) -> 'ok'.
 check_then_process_account(AccountId, {'ok', JObj}) ->
     case wh_doc:is_soft_deleted(JObj) of
         'true' ->
@@ -398,12 +398,12 @@ notify_low_balance(CurrentBalance, AccountId, AccountDb, JObj) ->
 
 -spec low_balance_threshold(ne_binary()) -> float().
 low_balance_threshold(Account) ->
-    AccountId = wh_util:format_account_id(Account, 'raw'),
-    AccountDb = wh_util:format_account_id(Account, 'encoded'),
     ConfigCat = <<(?NOTIFY_CONFIG_CAT)/binary, ".low_balance">>,
     Default = whapps_config:get_float(ConfigCat, <<"threshold">>, 5.00),
-    case couch_mgr:open_doc(AccountDb, AccountId) of
+
+    case kz_account:fetch(Account) of
         {'error', _R} -> Default;
         {'ok', JObj} ->
-            wh_json:get_float_value([<<"topup">>, <<"threshold">>], JObj, Default)
+            TopUp = wh_json:get_float_value([<<"topup">>, <<"threshold">>], JObj, Default),
+            kz_account:threshold(JObj, TopUp)
     end.

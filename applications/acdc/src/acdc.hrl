@@ -2,6 +2,7 @@
 -include_lib("whistle/include/wh_types.hrl").
 -include_lib("whistle/include/wh_log.hrl").
 -include_lib("whistle/include/wh_databases.hrl").
+-include_lib("whistle/include/wh_api.hrl").
 
 -define(CONFIG_CAT, <<"acdc">>).
 
@@ -13,6 +14,7 @@
 -define(ABANDON_TIMEOUT, 'member_timeout').
 -define(ABANDON_EXIT, 'member_exit').
 -define(ABANDON_HANGUP, 'member_hangup').
+-define(ABANDON_EMPTY, 'member_exit_empty').
 
 -define(PRESENCE_GREEN, <<"terminated">>).
 -define(PRESENCE_RED_FLASH, <<"early">>).
@@ -32,7 +34,7 @@
 -type abandon_reason() :: ?ABANDON_TIMEOUT | ?ABANDON_EXIT |
                           ?ABANDON_HANGUP.
 
--type deliveries() :: [gen_listener:basic_deliver(),...] | [].
+-type deliveries() :: [gen_listener:basic_deliver()].
 
 %% Check for cleanup every 5 minutes
 -define(CLEANUP_PERIOD, whapps_config:get_integer(?CONFIG_CAT, <<"cleanup_period_ms">>, 360000)).

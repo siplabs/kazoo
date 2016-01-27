@@ -350,9 +350,7 @@ handle_cast('sync_interface', #state{node=Node
                                     }=State) ->
     {'noreply', State#state{interface=node_interface(Node, Interface)}};
 handle_cast('sync_capabilities', #state{node=Node}=State) ->
-    _Pid = wh_util:spawn(fun() ->
-                                 probe_capabilities(Node)
-                         end),
+    _Pid = wh_util:spawn(fun probe_capabilities/1, [Node]),
     lager:debug("syncing capabilities in ~p", [_Pid]),
     {'noreply', State};
 handle_cast('sync_channels', #state{node=Node}=State) ->
@@ -362,7 +360,7 @@ handle_cast('sync_channels', #state{node=Node}=State) ->
     _ = ecallmgr_fs_channels:sync(Node, Channels),
     {'noreply', State};
 handle_cast('sync_registrations', #state{node=Node}=State) ->
-    _Pid = wh_util:spawn(fun() -> maybe_replay_registrations(Node) end),
+    _Pid = wh_util:spawn(fun maybe_replay_registrations/1, [Node]),
     lager:debug("syncing registrations in ~p", [_Pid]),
     {'noreply', State};
 handle_cast(_Req, State) ->
@@ -437,7 +435,7 @@ code_change(_OldVsn, State, _Extra) ->
 -type cmd_result() :: {'ok', {atom(), nonempty_string()}, ne_binary()} |
                       {'error', {atom(), nonempty_string()}, ne_binary()} |
                       {'timeout', {atom(), ne_binary()}}.
--type cmd_results() :: [cmd_result(),...] | [] |
+-type cmd_results() :: [cmd_result()] |
                        {'error', 'retry'}.
 
 -spec run_start_cmds(atom(), wh_proplist()) -> pid_ref().
@@ -582,13 +580,13 @@ process_resp(ApiCmd, ApiArg, [<<"-ERR ", Err/binary>>|Resps], Acc) ->
     end;
 process_resp(_, _, [], Acc) -> Acc.
 
--spec was_bad_error(ne_binary(), atom(), _) -> boolean().
+-spec was_bad_error(ne_binary(), atom(), any()) -> boolean().
 was_bad_error(<<"[Module already loaded]">>, 'load', _) -> 'false';
 was_bad_error(_E, _, _) -> 'true'.
 
--spec was_not_successful_cmd({'ok', _} |
-                             {'ok', _, _} |
-                             _
+-spec was_not_successful_cmd({'ok', any()} |
+                             {'ok', any(), any()} |
+                             any()
                             ) -> boolean().
 
 was_not_successful_cmd({'ok', _}) -> 'false';
@@ -698,7 +696,7 @@ maybe_replay_registrations(Node) ->
     wh_util:put_callid(Node),
     replay_registration(Node, get_registrations(Node)).
 
--spec replay_registration(atom(), list(wh_proplist()) | []) -> 'ok'.
+-spec replay_registration(atom(), [wh_proplist()]) -> 'ok'.
 replay_registration(_Node, [[]]) -> 'ok';
 replay_registration(_Node, []) -> 'ok';
 replay_registration(Node, [Reg | Regs]) ->
@@ -732,7 +730,7 @@ replay_expires(V) ->
 replay_contact(V) ->
     <<"<", (lists:nth(3, binary:split(V, <<"/">>, ['global'] ) ))/binary, ">">>.
 
--spec get_registrations(atom()) -> list(wh_proplist()).
+-spec get_registrations(atom()) -> [wh_proplist()].
 get_registrations(Node) ->
     case freeswitch:api(Node, 'show', "registrations") of
         {'ok', Response} ->
@@ -744,7 +742,7 @@ get_registrations(Node) ->
         _Else -> [[]]
     end.
 
--spec get_registration_details(list()) -> list(wh_proplist()).
+-spec get_registration_details(list()) -> [wh_proplist()].
 get_registration_details([Header, _, _, _| _] = Lines) ->
     [begin
          {Res, _Total} = lists:mapfoldl(

@@ -114,12 +114,12 @@ request(Method, Path, Body) ->
             verbose_debug("Response:~n503~n~s~n", [_Response]),
             lager:debug("braintree error response(~pms): 503 Maintenance", [wh_util:elapsed_ms(StartTime)]),
             braintree_util:error_maintenance();
-        {'ok', Code, _, [$<,$?,$x,$m,$l|_]=Response} ->
+        {'ok', Code, _, "<?xml"++_=Response} ->
             verbose_debug("Response:~n~p~n~s~n", [Code, Response]),
             {Xml, _} = xmerl_scan:string(Response),
             lager:debug("braintree xml response(~pms)", [wh_util:elapsed_ms(StartTime)]),
             verify_response(Xml);
-        {'ok', Code, _, [$<,$s,$e,$a,$r,$c,$h|_]=Response} ->
+        {'ok', Code, _, "<search"++_=Response} ->
             verbose_debug("Response:~n~p~n~s~n", [Code, Response]),
             {Xml, _} = xmerl_scan:string(Response),
             lager:debug("braintree xml response(~pms)", [wh_util:elapsed_ms(StartTime)]),
@@ -168,7 +168,7 @@ http_options() ->
 %% If braintree verbose debuging is enabled write the log line to the file
 %% @end
 %%--------------------------------------------------------------------
--spec verbose_debug(string(), [term()]) -> 'ok'.
+-spec verbose_debug(string(), [any()]) -> 'ok'.
 verbose_debug(Format, Args) ->
     case ?BT_DEBUG of
         'false' -> 'ok';

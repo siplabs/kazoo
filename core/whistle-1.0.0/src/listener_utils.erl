@@ -19,7 +19,7 @@
 %% { {Event-Category, Event-Name}, CallbackModule | {CallbackModule, Function} }
 -type responder_callback() :: {atom(), atom()}.
 -type responder() :: {{binary(), binary()}, responder_callback()}.
--type responders() :: [responder(),...] | [].
+-type responders() :: [responder()].
 -export_type([responder/0
               ,responders/0
              ]).
@@ -78,7 +78,7 @@ maybe_init_responder({Responder, _Fun}, 'true') when is_atom(Responder) ->
     catch
         _E:_R ->
             ST = erlang:get_stacktrace(),
-            lager:debug("responder ~s crashed: ~s: ~p", [_E, _R]),
+            lager:debug("responder ~s crashed: ~s: ~p", [Responder, _E, _R]),
             wh_util:log_stacktrace(ST)
     end;
 maybe_init_responder({_Responder, _Fun}, 'false') ->

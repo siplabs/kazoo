@@ -520,7 +520,7 @@ col_account_call_type(JObj, _Timestamp) -> wh_json:get_value([<<"custom_channel_
 col_rate(JObj, _Timestamp) -> wh_util:to_binary(wht_util:units_to_dollars(wh_json:get_value([<<"custom_channel_vars">>, <<"rate">>], JObj, 0))).
 col_rate_name(JObj, _Timestamp) -> wh_json:get_value([<<"custom_channel_vars">>, <<"rate_name">>], JObj, <<>>).
 col_bridge_id(JObj, _Timestamp) -> wh_json:get_value([<<"custom_channel_vars">>, <<"bridge_id">>], JObj, <<>>).
-col_recording_url(JObj, _Timestamp) -> wh_json:get_value([<<"custom_channel_vars">>, <<"recording_url">>], JObj, <<>>).
+col_recording_url(JObj, _Timestamp) -> wh_json:get_value([<<"recording_url">>], JObj, <<>>).
 col_call_priority(JObj, _Timestamp) -> wh_json:get_value([<<"custom_channel_vars">>, <<"call_priority">>], JObj, <<>>).
 
 col_reseller_cost(JObj, _Timestamp) -> wh_util:to_binary(reseller_cost(JObj)).
@@ -590,7 +590,7 @@ remove_qs_keys(Context) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec load_cdr(ne_binary(), cb_context:context()) -> cb_context:context().
-load_cdr(<<Year:4/binary, Month:2/binary, "-", _/binary>> = CDRId, Context) ->
+load_cdr(?MATCH_MODB_PREFIX(Year,Month,_) = CDRId, Context) ->
     AccountId = cb_context:account_id(Context),
     AcctDb = kazoo_modb:get_modb(AccountId, wh_util:to_integer(Year), wh_util:to_integer(Month)),
     Context1 = cb_context:set_account_db(Context, AcctDb),

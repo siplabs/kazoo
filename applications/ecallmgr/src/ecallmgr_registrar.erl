@@ -107,7 +107,7 @@
                       }).
 
 -type registration() :: #registration{}.
--type registrations() :: [registration(),...] | [].
+-type registrations() :: [registration()].
 
 %%%===================================================================
 %%% API
@@ -410,7 +410,7 @@ handle_cast({'delete_registration'
             }
             ,State) ->
     wh_util:put_callid(CallId),
-    _ = wh_util:spawn(fun() -> maybe_send_deregister_notice(Reg) end),
+    _ = wh_util:spawn(fun maybe_send_deregister_notice/1, [Reg]),
     ets:delete(?MODULE, Id),
     {'noreply', State};
 handle_cast('flush', State) ->
@@ -465,7 +465,7 @@ handle_info('expire', State) ->
     {'noreply', State};
 handle_info(?REGISTER_SUCCESS_MSG(Node, Props), State) ->
     wh_util:put_callid(?LOG_SYSTEM_ID),
-    _ = wh_util:spawn(?MODULE, 'handle_fs_reg', [Node, Props]),
+    _ = wh_util:spawn(fun handle_fs_reg/2, [Node, Props]),
     {'noreply', State};
 handle_info(_Info, State) ->
     wh_util:put_callid(?LOG_SYSTEM_ID),
@@ -495,7 +495,7 @@ handle_event(_JObj, _State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
--spec terminate(term(), term()) -> 'ok'.
+-spec terminate(any(), any()) -> 'ok'.
 terminate(_Reason, _) ->
     wh_util:put_callid(?LOG_SYSTEM_ID),
     lager:debug("ecallmgr registrar ~p termination", [_Reason]).
@@ -661,10 +661,10 @@ expire_objects() ->
                 ],
     expire_object(ets:select(?MODULE, MatchSpec, 1)).
 
--spec expire_object(_) -> 'ok'.
+-spec expire_object(any()) -> 'ok'.
 expire_object('$end_of_table') -> 'ok';
 expire_object({[#registration{id=Id}=Reg], Continuation}) ->
-    _ = wh_util:spawn(fun() -> maybe_send_deregister_notice(Reg) end),
+    _ = wh_util:spawn(fun maybe_send_deregister_notice/1, [Reg]),
     _ = ets:delete(?MODULE, Id),
     expire_object(ets:select(Continuation)).
 
@@ -700,7 +700,7 @@ build_query_spec(JObj, CountOnly) ->
      }
     ].
 
--spec build_query_spec_maybe_username(ne_binary(), wh_json:object()) -> _.
+-spec build_query_spec_maybe_username(ne_binary(), wh_json:object()) -> any().
 build_query_spec_maybe_username(Realm, JObj) ->
     case wh_json:get_value(<<"Username">>, JObj) of
         'undefined' ->
@@ -1170,10 +1170,10 @@ oldest_registrar() ->
 get_fs_contact(Props) ->
     Contact = props:get_first_defined([<<"Contact">>, <<"contact">>], Props),
     [User, AfterAt] = binary:split(Contact, <<"@">>), % only one @ allowed
-    <<User/binary, "@", (wh_util:to_binary(mochiweb_util:unquote(AfterAt)))/binary>>.
+    <<User/binary, "@", (kz_http:urldecode(AfterAt))/binary>>.
 
 -type ets_continuation() :: '$end_of_table' |
-                            {registrations(), term()}.
+                            {registrations(), any()}.
 
 -spec print_summary(ets_continuation()) -> 'ok'.
 -spec print_summary(ets_continuation(), non_neg_integer()) -> 'ok'.
@@ -1244,7 +1244,7 @@ print_property(Key, Value, _) ->
                          {'transport', ne_binary()} |
                          {'fs_path', ne_binary()} |
                          {'received', ne_binary()}.
--type contact_params() :: [contact_param(),...] | [].
+-type contact_params() :: [contact_param()].
 
 -spec breakup_contact(text()) -> contact_params().
 breakup_contact(Contact) when is_binary(Contact) ->

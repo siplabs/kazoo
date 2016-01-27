@@ -175,9 +175,9 @@ send_mwi_update(JObj, Username, Realm, Node, Registration) ->
     Body = io_lib:format(?MWI_BODY, [case NewMessages of 0 -> "no"; _ -> "yes" end
                                      ,ToAccount
                                      ,NewMessages
-                                     ,wh_json:get_integer_value(<<"Messages-Waiting">>, JObj, 0)
+                                     ,wh_json:get_integer_value(<<"Messages-Saved">>, JObj, 0)
                                      ,wh_json:get_integer_value(<<"Messages-Urgent">>, JObj, 0)
-                                     ,wh_json:get_integer_value(<<"Messages-Urgent-Waiting">>, JObj, 0)
+                                     ,wh_json:get_integer_value(<<"Messages-Urgent-Saved">>, JObj, 0)
                                     ]),
     RegistrationContact = wh_json:get_first_defined([<<"Bridge-RURI">>, <<"Contact">>], Registration),
     case ensure_contact_user(RegistrationContact, Username, Realm) of
@@ -256,18 +256,8 @@ register_overwrite(JObj, Props) ->
                  ]).
 
 -spec ensure_contact_user(ne_binary(), ne_binary(), ne_binary()) -> api_binary().
-ensure_contact_user(Contact, Username, Realm) ->
-    case nksip_parse_uri:uris(Contact) of
-        [#uri{user = <<>>, domain = <<>>, ext_opts=Opts}=Uri] ->
-            nksip_unparse:ruri(Uri#uri{user=Username, domain=Realm, opts=Opts});
-        [#uri{user = <<>>, ext_opts=Opts}=Uri] ->
-            nksip_unparse:ruri(Uri#uri{user=Username, opts=Opts});
-        [#uri{domain = <<>>, ext_opts=Opts}=Uri] ->
-            nksip_unparse:ruri(Uri#uri{domain=Realm, opts=Opts});
-        [#uri{ext_opts=Opts}=Uri] ->
-            nksip_unparse:ruri(Uri#uri{opts=Opts});
-        _Else -> 'undefined'
-    end.
+ensure_contact_user(OriginalContact, Username, Realm) ->
+    ecallmgr_util:fix_contact(OriginalContact, Username, Realm).
 
 %%%===================================================================
 %%% gen_server callbacks

@@ -236,7 +236,7 @@ refresh(?WH_FAXES_DB) ->
 refresh(?KZ_PORT_REQUESTS_DB) ->
     couch_mgr:db_create(?KZ_PORT_REQUESTS_DB),
     _ = couch_mgr:revise_doc_from_file(?KZ_PORT_REQUESTS_DB, 'crossbar', <<"views/port_requests.json">>),
-    _ = wh_util:spawn('wh_port_request', 'migrate', []),
+    _ = wh_util:spawn(fun wh_port_request:migrate/0),
     'ok';
 refresh(?KZ_ACDC_DB) ->
     couch_mgr:db_create(?KZ_ACDC_DB),
@@ -250,6 +250,10 @@ refresh(?KZ_CCCPS_DB) ->
 refresh(?KZ_TOKEN_DB) ->
     _ = couch_mgr:db_create(?KZ_TOKEN_DB),
     couch_mgr:revise_doc_from_file(?KZ_TOKEN_DB, 'crossbar', "views/token_auth.json"),
+    'ok';
+refresh(?WH_ALERTS_DB) ->
+    _ = couch_mgr:db_create(?WH_ALERTS_DB),
+    couch_mgr:revise_doc_from_file(?WH_ALERTS_DB, 'crossbar', "views/alerts.json"),
     'ok';
 refresh(Database) when is_binary(Database) ->
     case couch_util:db_classification(Database) of
@@ -310,7 +314,7 @@ maybe_remove_invalid_notify_doc(_Type, _Id, _Doc) -> 'ok'.
 -type migrate_values() :: [migrate_value()].
 -spec migrate_config_setting(migrate_setting(), migrate_setting()) ->
                                     'ok' |
-                                    {'error', _}.
+                                    {'error', any()}.
 migrate_config_setting(From, To) ->
     case remove_config_setting(From) of
         {'ok', _, []} -> 'ok';
@@ -322,7 +326,7 @@ migrate_config_setting(From, To) ->
 
 -spec migrate_config_setting(wh_json:object(), migrate_values(), migrate_setting()) ->
                                     'ok' |
-                                    {'error', _}.
+                                    {'error', any()}.
 migrate_config_setting(UpdatedFrom, Removed, To) ->
     case add_config_setting(To, Removed) of
         {'ok', UpdatedTo} ->
@@ -334,13 +338,13 @@ migrate_config_setting(UpdatedFrom, Removed, To) ->
 
 -spec add_config_setting(migrate_setting(), migrate_values()) ->
                                 'ok' |
-                                {'error', _}.
+                                {'error', any()}.
 add_config_setting({Id, Setting}, Values) ->
     add_config_setting(Id, Setting, Values).
 
 -spec add_config_setting(ne_binary(), config_key(), migrate_values()) ->
                                 'ok' |
-                                {'error', _}.
+                                {'error', any()}.
 add_config_setting(Id, Setting, Values) when is_binary(Id) ->
     case couch_mgr:open_doc(?WH_CONFIG_DB, Id) of
         {'ok', JObj} -> add_config_setting(JObj, Setting, Values);
@@ -388,13 +392,13 @@ add_config_setting(JObj, ToSetting, [{FromId, Node, FromSetting, Value} | Values
 
 -spec remove_config_setting(migrate_setting()) ->
                                    {'ok', wh_json:object(), migrate_values()} |
-                                   {'error', _}.
+                                   {'error', any()}.
 remove_config_setting({Id, Setting}) ->
     remove_config_setting(Id, Setting).
 
 -spec remove_config_setting(ne_binary() | wh_json:object(), config_key()) ->
                                    {'ok', wh_json:object(), migrate_values()} |
-                                   {'error', _}.
+                                   {'error', any()}.
 remove_config_setting(Id, Setting) when is_binary(Id) ->
     case couch_mgr:open_doc(?WH_CONFIG_DB, Id) of
         {'ok', JObj} -> remove_config_setting(JObj, Setting);
@@ -1105,6 +1109,13 @@ maybe_delete_db(Database) ->
                             {'ok', wh_json:objects()} |
                             {'error', _} |
                             'ok'.
+purge_doc_type(Type, Account)
+  when is_binary(Type);
+       is_binary(Account) ->
+    purge_doc_type(Type
+                   ,Account
+                   ,whapps_config:get_integer(?SYSCONFIG_COUCH, <<"default_chunk_size">>, ?MILLISECONDS_IN_SECOND)
+                  );
 purge_doc_type([], _Account) -> 'ok';
 purge_doc_type([Type|Types], Account) ->
     _ = purge_doc_type(Type, Account),
