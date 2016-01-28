@@ -36,6 +36,8 @@
 
 -include("ecallmgr.hrl").
 
+-define(SERVER, ?MODULE).
+
 -define(UPTIME_S, ecallmgr_config:get_integer(<<"fs_node_uptime_s">>, 600)).
 
 -record(interface, {name
@@ -137,16 +139,21 @@
                     ,{{?MODULE, 'handle_reload_gateways'}
                       ,[{<<"switch_event">>, <<"reload_gateways">>}]
                      }
+                    ,{'ecallmgr_fs_node_command'
+                      ,[{<<"switch_event">>, <<"command">>}]
+                     }
                     ]).
--define(BINDINGS, [{'switch', [{'restrict_to', ['reload_acls'
-                                                ,'reload_gateways'
-                                               ]}
-                              ]}
-                  ]).
+-define(BINDINGS(Node), [{'switch', [{'node', Node}
+                                      ,{'restrict_to', ['reload_acls'
+                                                        ,'reload_gateways'
+                                                        ,'command'
+                                                       ]
+                                       }
+                                    ]
+                         }
+                        ]).
 -define(QUEUE_OPTIONS, [{'exclusive', 'false'}]).
 -define(CONSUME_OPTIONS, [{'exclusive', 'false'}]).
-
--define(SERVER, ?MODULE).
 
 -define(YR_TO_MICRO(Y), wh_util:to_integer(Y)*365*24*3600*1000000).
 -define(DAY_TO_MICRO(D), wh_util:to_integer(D)*24*3600*1000000).
@@ -180,23 +187,18 @@
 %%%===================================================================
 
 %%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
+%% @doc Starts the server
 %%--------------------------------------------------------------------
 -spec start_link(atom()) -> startlink_ret().
 -spec start_link(atom(), wh_proplist()) -> startlink_ret().
-
 start_link(Node) -> start_link(Node, []).
 start_link(Node, Options) ->
     QueueName = <<(wh_util:to_binary(Node))/binary
                   ,"-"
                   ,(wh_util:to_binary(?MODULE))/binary
                 >>,
-    gen_listener:start_link(?MODULE, [{'responders', ?RESPONDERS}
-                                      ,{'bindings', ?BINDINGS}
+    gen_listener:start_link(?SERVER, [{'responders', ?RESPONDERS}
+                                      ,{'bindings', ?BINDINGS(Node)}
                                       ,{'queue_name', QueueName}
                                       ,{'queue_options', ?QUEUE_OPTIONS}
                                       ,{'consume_options', ?CONSUME_OPTIONS}

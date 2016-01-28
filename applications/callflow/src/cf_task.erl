@@ -23,6 +23,8 @@
 
 -include("callflow.hrl").
 
+-define(SERVER, ?MODULE).
+
 -record(state, {call :: whapps_call:call()
                 ,callback :: fun()
                 ,args :: list()
@@ -45,13 +47,11 @@
 -define(CONSUME_OPTIONS, []).
 
 %%--------------------------------------------------------------------
-%% @doc
-%% Starts the listener and binds to the call channel destroy events
-%% @end
+%% @doc Starts the listener and binds to the call channel destroy events
 %%--------------------------------------------------------------------
 -spec start_link(whapps_call:call(), fun(), list()) -> startlink_ret().
 start_link(Call, Fun, Args) ->
-    gen_listener:start_link(?MODULE
+    gen_listener:start_link(?SERVER
                             ,[{'bindings', ?BINDINGS(whapps_call:call_id(Call))}
                               ,{'responders', ?RESPONDERS}
                               ,{'queue_name', ?QUEUE_NAME}       % optional to include
@@ -147,6 +147,7 @@ handle_info(Info, State) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec handle_event(wh_json:object(), state()) -> {'reply', wh_proplist()}.
+handle_event(_JObj, #state{pid='undefined'}) -> 'ignore';
 handle_event(_JObj, #state{pid=Pid}) ->
     {'reply', [{'cf_task_pid', Pid}]}.
 

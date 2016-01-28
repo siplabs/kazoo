@@ -28,6 +28,8 @@
 
 -include("fax.hrl").
 
+-define(SERVER, ?MODULE).
+
 -record(state, {
           call :: whapps_call:call()
          ,action = 'receive' :: 'receive' | 'transmit'
@@ -70,14 +72,11 @@
 %%%===================================================================
 
 %%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
+%% @doc Starts the server
 %%--------------------------------------------------------------------
+-spec start_link(whapps_call:call(), wh_json:object()) -> startlink_ret().
 start_link(Call, JObj) ->
-    gen_listener:start_link(?MODULE
+    gen_listener:start_link(?SERVER
                             ,[{'bindings', ?BINDINGS(Call)}
                               ,{'responders', ?RESPONDERS}
                              ]
@@ -280,6 +279,7 @@ start_receive_fax(#state{call=Call
     LocalFile = get_fs_filename(NewState),
     send_status(NewState, list_to_binary(["New Fax from ", whapps_call:caller_id_number(Call)]), ?FAX_START, 'undefined'),
     whapps_call_command:answer(Call),
+    lager:debug("receive fax t.38 ~p / ~p", [ResourceFlag, ReceiveFlag]),
     whapps_call_command:receive_fax(ResourceFlag, ReceiveFlag, LocalFile, Call),
     {'noreply', NewState}.
 

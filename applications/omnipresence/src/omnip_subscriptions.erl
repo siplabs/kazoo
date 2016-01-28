@@ -46,6 +46,8 @@
 -include("omnipresence.hrl").
 -include_lib("kazoo_etsmgr/include/kazoo_etsmgr.hrl").
 
+-define(SERVER, ?MODULE).
+
 -define(EXPIRE_SUBSCRIPTIONS, whapps_config:get_integer(?CONFIG_CAT, <<"expire_check_ms">>, ?MILLISECONDS_IN_SECOND)).
 -define(EXPIRES_FUDGE, whapps_config:get_integer(?CONFIG_CAT, <<"expires_fudge_s">>, 20)).
 -define(EXPIRE_MESSAGE, 'clear_expired').
@@ -65,14 +67,11 @@
 %%%===================================================================
 
 %%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
+%% @doc Starts the server
 %%--------------------------------------------------------------------
+-spec start_link() -> startlink_ret().
 start_link() ->
-    gen_server:start_link({'local', ?MODULE}, ?MODULE, [], []).
+    gen_server:start_link({'local', ?SERVER}, ?MODULE, [], []).
 
 -spec handle_search_req(wh_json:object(), wh_proplist()) -> 'ok'.
 handle_search_req(JObj, _Props) ->
@@ -105,13 +104,13 @@ handle_subscribe(JObj, _Props) ->
     case wh_json:get_value(<<"Node">>, JObj) =:= wh_util:to_binary(node()) of
         'true' -> 'ok';
         'false' ->
-            gen_server:call(?MODULE, {'subscribe', subscribe_to_record(JObj)})
+            gen_server:call(?SERVER, {'subscribe', subscribe_to_record(JObj)})
     end.
 
 -spec handle_kamailio_subscribe(wh_json:object(), wh_proplist()) -> 'ok'.
 handle_kamailio_subscribe(JObj, _Props) ->
     'true' = wapi_omnipresence:subscribe_v(JObj),
-    case gen_server:call(?MODULE, {'subscribe', JObj}) of
+    case gen_server:call(?SERVER, {'subscribe', JObj}) of
         'invalid' -> 'ok';
         {Count, {'unsubscribe', _}} ->
             distribute_subscribe(Count, JObj);
@@ -125,7 +124,7 @@ handle_kamailio_subscribe(JObj, _Props) ->
 
 -spec proxy_subscribe(wh_proplist()) -> 'ok'.
 proxy_subscribe(Props) ->
-    case gen_server:call(?MODULE, {'subscribe', Props}) of
+    case gen_server:call(?SERVER, {'subscribe', Props}) of
         'invalid' -> 'ok';
         {_, {'resubscribe', Subscription}} ->
             _ = resubscribe_notify(Subscription);
@@ -137,14 +136,14 @@ proxy_subscribe(Props) ->
 -spec handle_kamailio_notify(wh_json:object(), wh_proplist()) -> 'ok'.
 handle_kamailio_notify(JObj, _Props) ->
     'true' = wapi_omnipresence:notify_v(JObj),
-    gen_server:call(?MODULE, {'notify', JObj}).
+    gen_server:call(?SERVER, {'notify', JObj}).
 
 -spec handle_sync(wh_json:object(), wh_proplist()) -> 'ok'.
 handle_sync(JObj, _Props) ->
     'true' = wapi_presence:sync_v(JObj),
     Action = wh_json:get_value(<<"Action">>, JObj),
     Node = wh_json:get_value(<<"Node">>, JObj),
-    gen_server:cast(?MODULE, {'sync', {Action, Node}}).
+    gen_server:cast(?SERVER, {'sync', {Action, Node}}).
 
 -spec handle_mwi_update(wh_json:object(), wh_proplist()) -> any().
 handle_mwi_update(JObj, _Props) ->
@@ -407,6 +406,7 @@ subscribe_to_record(JObj) ->
                         ,subscription_id=wh_json:get_value(<<"Subscription-ID">>, JObj)
                         ,proxy_route= wh_json:get_value(<<"Proxy-Route">>, JObj)
                         ,version=Version
+                        ,user_agent=wh_json:get_binary_value(<<"User-Agent">>, JObj)
                        }.
 
 %%--------------------------------------------------------------------
@@ -437,6 +437,7 @@ subscription_to_json(#omnip_subscription{user=User
                                          ,last_sequence=Sequence
                                          ,last_reply=Reply
                                          ,last_body=Body
+                                         ,user_agent=UA
                                         }) ->
     wh_json:from_list(
       props:filter_undefined(
@@ -458,6 +459,7 @@ subscription_to_json(#omnip_subscription{user=User
                                             ,{<<"reply">>, Reply}
                                             ,{<<"body">>, Body}
                                            ])}
+         ,{<<"user_agent">>, UA}
         ])).
 
 -spec start_expire_ref() -> reference().
@@ -584,7 +586,7 @@ get_subscriptions(Event, User, Version) ->
     end.
 
 -spec dedup(subscriptions()) -> subscriptions().
--spec dedup(subscriptions(), dict()) -> subscriptions().
+-spec dedup(subscriptions(), dict:dict()) -> subscriptions().
 dedup(Subscriptions) ->
     dedup(Subscriptions, dict:new()).
 
@@ -666,6 +668,8 @@ subscribe(#omnip_subscription{user=_U
                               ,expires=E1
                               ,timestamp=T1
                               ,call_id=CallId
+                              ,stalker=Stalker
+                              ,contact=Contact
                              }=S) ->
     case find_subscription(CallId) of
         {'ok', #omnip_subscription{timestamp=_T
@@ -678,9 +682,13 @@ subscribe(#omnip_subscription{user=_U
             ets:update_element(table_id(), CallId,
                                [{#omnip_subscription.timestamp, T1}
                                 ,{#omnip_subscription.expires, E1}
+                                ,{#omnip_subscription.stalker, Stalker}
+                                ,{#omnip_subscription.contact, Contact}
                                ]),
             {'resubscribe', O#omnip_subscription{timestamp=T1
                                                  ,expires=E1
+                                                 ,stalker=Stalker
+                                                 ,contact=Contact
                                                 }};
         {'error', 'not_found'} ->
             lager:debug("subscribe ~s/~s/~s expires in ~ps", [_U, _F, CallId, E1]),

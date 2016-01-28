@@ -24,7 +24,7 @@
 %%%-------------------------------------------------------------------
 -module(cf_resources).
 
--include("../callflow.hrl").
+-include("callflow.hrl").
 -include_lib("whistle/include/wapi_offnet_resource.hrl").
 
 -export([handle/2]).
@@ -43,6 +43,15 @@ handle(Data, Call) ->
     'ok' = wapi_offnet_resource:publish_req(build_offnet_request(Data, UpdatedCall)),
     case wait_for_stepswitch(UpdatedCall) of
         {<<"SUCCESS">>, _} ->
+            lager:info("completed successful offnet request"),
+            cf_exe:stop(UpdatedCall);
+        {<<"TRANSFER">>, _} ->
+            lager:info("completed successful offnet request"),
+            cf_exe:transfer(UpdatedCall);
+        {<<"NORMAL_CLEARING">>, <<"sip:200">>} ->
+            lager:info("completed successful offnet request"),
+            cf_exe:stop(UpdatedCall);
+        {<<"NORMAL_CLEARING">>, 'undefined'} ->
             lager:info("completed successful offnet request"),
             cf_exe:stop(UpdatedCall);
         {Cause, Code} -> handle_bridge_failure(Cause, Code, UpdatedCall)
@@ -370,44 +379,18 @@ wait_for_stepswitch(Call) ->
                     {kz_call_event:response_message(JObj)
                      ,kz_call_event:response_code(JObj)
                     };
-                {<<"call_event">>, <<"CHANNEL_BRIDGE">>} ->
-                    maybe_start_offnet_metaflow(Call, kz_call_event:other_leg_call_id(JObj)),
-                    wait_for_stepswitch(Call);
                 {<<"call_event">>, <<"CHANNEL_DESTROY">>} ->
-                    lager:info("recv channel destroy"),
-                    {kz_call_event:hangup_cause(JObj)
-                     ,kz_call_event:hangup_code(JObj)
-                    };
-                _ -> wait_for_stepswitch(Call)
+                    handle_channel_destroy(JObj);
+                {_Cat, _Evt} ->
+                    wait_for_stepswitch(Call)
             end;
         _ -> wait_for_stepswitch(Call)
     end.
 
--spec maybe_start_offnet_metaflow(whapps_call:call(), ne_binary()) -> 'ok'.
-maybe_start_offnet_metaflow(Call, BridgedTo) ->
-    HackedCall = hack_call(Call, BridgedTo),
-    case cf_endpoint:get(HackedCall) of
-        {'ok', EP} -> cf_util:maybe_start_metaflow(HackedCall, EP);
-        _Else -> lager:debug("can't get endpoint for ~s", whapps_call:authorizing_id(HackedCall))
-    end.
+handle_channel_destroy(JObj) ->
+    handle_channel_destroy(wh_json:get_value(<<"Channel-Name">>, JObj), JObj).
 
--spec hack_call(whapps_call:call(), ne_binary()) -> whapps_call:call().
-hack_call(Call, BridgedTo) ->
-    {AuthorizingType, AuthorizingId} = hack_authz(Call),
-    Funs = [{fun whapps_call:set_call_id/2, BridgedTo}
-            ,{fun whapps_call:set_other_leg_call_id/2, whapps_call:call_id(Call)}
-            ,{fun whapps_call:set_authorizing_type/2, AuthorizingType}
-            ,{fun whapps_call:set_authorizing_id/2, AuthorizingId}
-           ],
-    whapps_call:exec(Funs, Call).
-
--spec hack_authz(whapps_call:call()) -> {ne_binary(), ne_binary()}.
--spec hack_authz(whapps_call:call(), api_binary()) -> {ne_binary(), ne_binary()}.
-
-hack_authz(Call) ->
-    hack_authz(Call, whapps_call:authorizing_id(Call)).
-
-hack_authz(Call, 'undefined') ->
-    {<<"account">>, whapps_call:account_id(Call)};
-hack_authz(Call, _) ->
-    {whapps_call:authorizing_type(Call), whapps_call:authorizing_id(Call)}.
+handle_channel_destroy(<<"loopback", _/binary>>, _JObj) ->
+    {<<"TRANSFER">>, 'ok'};
+handle_channel_destroy(_, JObj) ->
+    {kz_call_event:hangup_cause(JObj), kz_call_event:hangup_code(JObj)}.

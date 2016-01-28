@@ -12,9 +12,7 @@
 -module(ecallmgr_util).
 
 -export([send_cmd/4]).
--export([get_fs_kv/2, get_fs_kv/3]).
--export([set/3]).
--export([export/3, bridge_export/3]).
+-export([get_fs_kv/2, get_fs_kv/3, get_fs_key_and_value/3]).
 -export([get_expires/1]).
 -export([get_interface_properties/1, get_interface_properties/2]).
 -export([get_sip_to/1, get_sip_from/1, get_sip_request/1, get_orig_ip/1, get_orig_port/1]).
@@ -150,7 +148,7 @@ get_interface_properties(Node, Interface) ->
 %% retrieves the sip address for the 'to' field
 -spec get_sip_to(wh_proplist()) -> ne_binary().
 get_sip_to(Props) ->
-    get_sip_to(Props, props:get_value(<<"Call-Direction">>, Props)).
+    get_sip_to(Props, kzd_freeswitch:call_direction(Props)).
 
 get_sip_to(Props, <<"outbound">>) ->
     case props:get_value(<<"Channel-Presence-ID">>, Props) of
@@ -167,7 +165,7 @@ get_sip_to(Props, _) ->
 -spec get_sip_from(wh_proplist()) -> ne_binary().
 -spec get_sip_from(wh_proplist(), api_binary()) -> ne_binary().
 get_sip_from(Props) ->
-    get_sip_from(Props, props:get_value(<<"Call-Direction">>, Props)).
+    get_sip_from(Props, kzd_freeswitch:call_direction(Props)).
 
 get_sip_from(Props, <<"outbound">>) ->
     case props:get_value(<<"Other-Leg-Channel-Name">>, Props) of
@@ -251,25 +249,53 @@ custom_channel_vars(Props) ->
     custom_channel_vars(Props, []).
 
 custom_channel_vars(Props, Initial) ->
-    lists:foldl(fun custom_channel_vars_fold/2
-                ,Initial
-                ,Props
-               ).
+    maybe_update_referred_ccv(
+      Props
+      ,lists:usort(fun({A, _}, {B, _}) -> A =< B end
+                ,lists:foldl(fun custom_channel_vars_fold/2
+                  ,Initial
+                  ,Props
+                  ))
+     ).
 
 custom_channel_vars_fold({<<"variable_", ?CHANNEL_VAR_PREFIX, Key/binary>>, V}, Acc) ->
     [{Key, V} | Acc];
 custom_channel_vars_fold({<<?CHANNEL_VAR_PREFIX, Key/binary>>, V}, Acc) ->
     [{Key, V} | Acc];
-custom_channel_vars_fold({<<"variable_sip_h_Referred-By">>, V}, Acc) ->
-    [{<<"Referred-By">>, kz_http:urldecode(V)} | Acc];
-custom_channel_vars_fold({<<"variable_sip_refer_to">>, V}, Acc) ->
-    [{<<"Referred-To">>, kz_http:urldecode(V)} | Acc];
 custom_channel_vars_fold({<<"variable_sip_h_X-", ?CHANNEL_VAR_PREFIX, Key/binary>>, V}, Acc) ->
     case props:is_defined(Key, Acc) of
         'true' -> Acc;
         'false' -> [{Key, V} | Acc]
     end;
 custom_channel_vars_fold(_, Acc) -> Acc.
+
+-spec maybe_update_referred_ccv(wh_proplist(), wh_proplist()) -> wh_proplist().
+maybe_update_referred_ccv(Props, CCVs) ->
+    update_referred_by_ccv(
+      props:get_value(<<"variable_sip_h_Referred-By">>, Props)
+      ,update_referred_to_ccv(
+         props:get_value(<<"variable_sip_refer_to">>, Props)
+         ,CCVs
+        )
+     ).
+
+-spec update_referred_by_ccv(api_binary(), wh_proplist()) -> wh_proplist().
+update_referred_by_ccv('undefined', CCVs) -> props:delete(<<"Referred-By">>, CCVs);
+update_referred_by_ccv(ReferredBy, CCVs) ->
+    props:set_value(
+      <<"Referred-By">>
+      ,kz_http:urldecode(ReferredBy)
+      ,CCVs
+     ).
+
+-spec update_referred_to_ccv(api_binary(), wh_proplist()) -> wh_proplist().
+update_referred_to_ccv('undefined', CCVs) -> props:delete(<<"Referred-To">>, CCVs);
+update_referred_to_ccv(ReferredTo, CCVs) ->
+    props:set_value(
+      <<"Referred-To">>
+      ,kz_http:urldecode(ReferredTo)
+      ,CCVs
+     ).
 
 %% convert a raw FS string of headers to a proplist
 %% "Event-Name: NAME\nEvent-Timestamp: 1234\n" -> [{<<"Event-Name">>, <<"NAME">>}, {<<"Event-Timestamp">>, <<"1234">>}]
@@ -291,7 +317,8 @@ fix_value(_K, V) -> V.
 unserialize_fs_array('undefined') -> [];
 unserialize_fs_array(<<"ARRAY::", Serialized/binary>>) ->
     binary:split(Serialized, <<"|:">>, ['global']);
-unserialize_fs_array(_) -> [].
+unserialize_fs_array(Single) ->
+    [Single].
 
 %% convert a raw FS list of vars to a proplist
 %% "Event-Name=NAME,Event-Timestamp=1234" -> [{<<"Event-Name">>, <<"NAME">>}, {<<"Event-Timestamp">>, <<"1234">>}]
@@ -322,6 +349,8 @@ is_node_up(Node, UUID) ->
 get_fs_kv(Key, Value) ->
     get_fs_kv(Key, Value, 'undefined').
 
+get_fs_kv(<<?CHANNEL_VAR_PREFIX, Key/binary>>, Val, _) ->
+    list_to_binary([?CHANNEL_VAR_PREFIX, wh_util:to_list(Key), "=", wh_util:to_list(Val)]);
 get_fs_kv(<<"Hold-Media">>, Media, UUID) ->
     list_to_binary(["hold_music="
                     ,wh_util:to_list(media_path(Media, 'extant', UUID, wh_json:new()))
@@ -347,6 +376,8 @@ get_fs_key_and_value(<<"Hold-Media">>, Media, UUID) ->
 get_fs_key_and_value(<<"Diversions">>, Diversions, _UUID) ->
     lager:debug("setting diversions ~p on the channel", [Diversions]),
     [{<<"sip_h_Diversion">>, D} || D <- Diversions];
+get_fs_key_and_value(<<?CHANNEL_VAR_PREFIX, Key/binary>>=Prefix, Val, _UUID) ->
+    {Prefix, maybe_sanitize_fs_value(Key, Val)};
 get_fs_key_and_value(Key, Val, _UUID) when is_binary(Val) ->
     case lists:keyfind(Key, 1, ?SPECIAL_CHANNEL_VARS) of
         'false' ->
@@ -375,126 +406,6 @@ maybe_sanitize_fs_value(Key, Val) when not is_binary(Key) ->
 maybe_sanitize_fs_value(Key, Val) when not is_binary(Val) ->
     maybe_sanitize_fs_value(Key, wh_util:to_binary(Val));
 maybe_sanitize_fs_value(_, Val) -> Val.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%%--------------------------------------------------------------------
--spec set(atom(), ne_binary(), wh_proplist()) -> send_cmd_ret().
-set(_, _, []) -> 'ok';
-set(Node, UUID, [{<<"Auto-Answer", _/binary>> = K, V}]) ->
-    ecallmgr_fs_command:set(Node, UUID, [{<<"alert_info">>, <<"intercom">>}, get_fs_key_and_value(K, V, UUID)]);
-set(Node, UUID, [{<<"Hold-Media">>, Value}]) ->
-    Media = media_path(Value, 'extant', UUID, wh_json:new()),
-    AppArg = wh_util:to_list(<<"hold_music=", Media/binary>>),
-    %% NOTE: due to how we handle hold_music we need to export
-    %%    this var rather than set...
-    _ = freeswitch:sendmsg(Node, UUID, [{"call-command", "execute"}
-                                        ,{"execute-app-name", "export"}
-                                        ,{"execute-app-arg", AppArg}
-                                       ]),
-    'ok';
-set(Node, UUID, [{<<"ringback">>, Media}]) ->
-    AppArgs = [<<"ringback=", Media/binary>>,<<"transfer_ringback=", Media/binary>>],
-    _ = [freeswitch:sendmsg(Node, UUID, [{"call-command", "execute"}
-                                        ,{"execute-app-name", "export"}
-                                        ,{"execute-app-arg", AppArg}
-                                       ]) || AppArg <- AppArgs],
-    'ok';
-set(Node, UUID, [{K, V}]) ->
-    case get_fs_key_and_value(K, V, UUID) of
-        'skip' -> 'ok';
-        KV -> ecallmgr_fs_command:set(Node, UUID, [KV])
-    end;
-set(Node, UUID, [{_, _}|_]=Props) ->
-    Multiset = lists:foldl(fun(Prop, Acc) ->
-                              set_fold(Node, UUID, Prop, Acc)
-                           end, [], Props),
-    ecallmgr_fs_command:set(Node, UUID, Multiset).
-
-set_fold(_Node, _UUID, {_Key, 'undefined'}, Acc) -> Acc;
-set_fold(Node, UUID, {<<"Hold-Media">>, Value}, Acc) ->
-    Media = media_path(Value, 'extant', UUID, wh_json:new()),
-    AppArg = wh_util:to_list(<<"hold_music=", Media/binary>>),
-    %% NOTE: due to how we handle hold_music we need to export
-    %%    this var rather than set...
-    _ = freeswitch:sendmsg(Node, UUID, [{"call-command", "execute"}
-                                        ,{"execute-app-name", "export"}
-                                        ,{"execute-app-arg", AppArg}
-                                       ]),
-    Acc;
-set_fold(_, UUID, {<<"Auto-Answer", _/binary>> = K, V}, Acc) ->
-    [{<<"alert_info">>, <<"intercom">>}
-     ,get_fs_key_and_value(K, V, UUID)
-     | Acc
-    ];
-set_fold(Node, UUID, {K, V}, Acc) ->
-    case get_fs_key_and_value(K, V, UUID) of
-        'skip' -> Acc;
-        {FSVariable, FSValue} ->
-            %% NOTE: uuid_setXXX does not support vars:
-            %%   switch_channel.c:1287 Invalid data (XXX contains a variable)
-            %%   so issue a set command if it is present.
-            case binary:match(FSVariable, <<"${">>) =:= 'nomatch'
-                andalso binary:match(FSValue, <<"${">>) =:= 'nomatch'
-            of
-                'true' -> [{FSVariable, FSValue} | Acc];
-                'false' ->
-                    AppArg = wh_util:to_list(<<FSVariable/binary, "=", FSValue/binary>>),
-                    _ = freeswitch:sendmsg(Node, UUID, [{"call-command", "execute"}
-                                                        ,{"execute-app-name", "set"}
-                                                        ,{"execute-app-arg", AppArg}
-                                                       ]),
-                    Acc
-            end
-    end.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%%--------------------------------------------------------------------
--spec export(atom(), ne_binary(), wh_proplist()) -> send_cmd_ret().
-export(_, _, []) -> 'ok';
-export(Node, UUID, [{<<"Auto-Answer", _/binary>> = K, V} | Props]) ->
-    Exports = [get_fs_key_and_value(Key, Val, UUID)
-               || {Key, Val} <- Props
-              ],
-    ecallmgr_fs_command:export(Node, UUID, [{<<"alert_info">>, <<"intercom">>}
-                                            ,get_fs_key_and_value(K, V, UUID)
-                                            | props:filter(Exports, 'skip')
-                                           ]);
-export(Node, UUID, Props) ->
-    Exports = [get_fs_key_and_value(Key, Val, UUID) || {Key, Val} <- Props],
-    ecallmgr_fs_command:export(Node, UUID, props:filter(Exports, 'skip')).
-
--spec bridge_export(atom(), ne_binary(), wh_proplist()) -> send_cmd_ret().
-bridge_export(_, _, []) -> 'ok';
-bridge_export(Node, UUID, [{<<"Auto-Answer", _/binary>> = K, V} | Props]) ->
-    BridgeExports = get_fs_keys_and_values(UUID, Props),
-    ecallmgr_fs_command:bridge_export(Node, UUID, [{<<"alert_info">>, <<"intercom">>}
-                                                   ,get_fs_key_and_value(K, V, UUID)
-                                                   | BridgeExports
-                                                  ]
-                                     );
-bridge_export(Node, UUID, Props) ->
-    BridgeExports = get_fs_keys_and_values(UUID, Props),
-    ecallmgr_fs_command:bridge_export(Node, UUID, BridgeExports).
-
--spec get_fs_keys_and_values(ne_binary(), wh_proplist()) -> wh_proplist().
-get_fs_keys_and_values(UUID, Props) ->
-    lists:foldl(fun(P, A) -> get_fs_kvs_fold(P, A, UUID) end, [], Props).
-
--spec get_fs_kvs_fold({ne_binary(), wh_json:json_term()}, wh_proplist(), ne_binary()) ->
-                             wh_proplist().
-get_fs_kvs_fold({K, V}, Acc, UUID) ->
-    case get_fs_key_and_value(K, V, UUID) of
-        'skip' -> Acc;
-        {_FSKey, _FSVal}=T -> [T | Acc];
-        [] -> Acc;
-        [_|_]=L -> L ++ Acc
-    end.
 
 %%--------------------------------------------------------------------
 %% @public
@@ -867,10 +778,9 @@ maybe_set_interface(Contact, #bridge_endpoint{sip_interface='undefined'}=Endpoin
             <<"sofia/", ?SIP_INTERFACE, "/", Contact/binary>>
     end;
 maybe_set_interface(Contact, #bridge_endpoint{sip_interface= <<"sofia/", _/binary>>=SIPInterface}) ->
-    <<(wh_util:strip_right_binary(SIPInterface, <<"/">>))/binary, "/", Contact/binary>>;
+    <<(wh_util:strip_right_binary(SIPInterface, $/))/binary, "/", Contact/binary>>;
 maybe_set_interface(Contact, #bridge_endpoint{sip_interface=SIPInterface}) ->
     <<"sofia/", SIPInterface/binary, "/", Contact/binary>>.
-
 
 -spec append_channel_vars(ne_binary(), bridge_endpoint()) -> ne_binary().
 append_channel_vars(Contact, #bridge_endpoint{include_channel_vars='false'}) ->
@@ -1050,7 +960,7 @@ request_media_url(MediaName, CallId, JObj, Type) ->
                   [{<<"Media-Name">>, MediaName}
                    ,{<<"Stream-Type">>, wh_util:to_binary(Type)}
                    ,{<<"Call-ID">>, CallId}
-                   ,{<<"Msg-ID">>, wh_util:to_binary(wh_util:current_tstamp())}
+                   ,{<<"Msg-ID">>, wh_util:rand_hex_binary(8)}
                    | wh_api:default_headers(<<"media">>, <<"media_req">>, ?APP_NAME, ?APP_VERSION)
                   ])
                 ,JObj),

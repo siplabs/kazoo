@@ -20,6 +20,8 @@
 
 -include("ecallmgr.hrl").
 
+-define(SERVER, ?MODULE).
+
 -type bindings() :: atom() | [atom(),...] | ne_binary() | ne_binaries().
 
 -record(state, {node :: atom()
@@ -40,15 +42,11 @@
 %%%===================================================================
 
 %%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
+%% @doc Starts the server
 %%--------------------------------------------------------------------
 -spec start_link(atom(), bindings(), bindings()) -> startlink_ret().
 start_link(Node, Bindings, Subclasses) ->
-    gen_server:start_link(?MODULE, [Node, Bindings, Subclasses], []).
+    gen_server:start_link(?SERVER, [Node, Bindings, Subclasses], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -179,12 +177,10 @@ handle_info({'tcp', Socket, Data}, #state{socket=Socket
             EventName = props:get_value(<<"Event-Subclass">>, Props, props:get_value(<<"Event-Name">>, Props)),
             EventProps = props:filter_undefined([{<<"Switch-URL">>, SwitchURL}
                                                  ,{<<"Switch-URI">>, SwitchURI}
+                                                 ,{<<"Switch-Nodename">>, wh_util:to_binary(Node)}
                                                 ]
                                                ) ++ Props ,
-            _ = wh_util:spawn(fun() ->
-                                      maybe_send_event(EventName, UUID, EventProps, Node),
-                                      process_event(EventName, UUID, EventProps, Node)
-                              end),
+            _ = wh_util:spawn(fun process_stream/4, [EventName, UUID, EventProps, Node]),
             {'noreply', State, Timeout};
         _Else ->
             io:format("~p~n", [_Else]),
@@ -322,9 +318,20 @@ maybe_bind(Node, Bindings, Attempts) ->
             maybe_bind(Node, Bindings, Attempts+1)
     end.
 
+-spec process_stream(ne_binary(), api_binary(), wh_proplist(), atom()) -> any().
+process_stream(<<"CHANNEL_CREATE">> = EventName, UUID, EventProps, Node) ->
+    Props = ecallmgr_fs_loopback:filter(Node, UUID, EventProps, 'true'),
+    maybe_send_event(EventName, UUID, Props, Node),
+    process_event(EventName, UUID, Props, Node);
+process_stream(EventName, UUID, EventProps, Node) ->
+    maybe_send_event(EventName, UUID, EventProps, Node),
+    process_event(EventName, UUID, EventProps, Node).
+
 -spec process_event(ne_binary(), api_binary(), wh_proplist(), atom()) -> any().
-process_event(<<"CHANNEL_CREATE">>, UUID, _Props, Node) ->
+process_event(<<"CHANNEL_CREATE">>, UUID, Props, Node) ->
     wh_util:put_callid(UUID),
+    _ = ecallmgr_fs_channel:new(Props, Node),
+    _ = ecallmgr_fs_channel:maybe_update_interaction_id(Props, Node),
     maybe_start_event_listener(Node, UUID);
 process_event(?CHANNEL_MOVE_RELEASED_EVENT_BIN, _, Props, Node) ->
     UUID = props:get_value(<<"old_node_channel_uuid">>, Props),
@@ -355,7 +362,7 @@ maybe_send_event(<<"CHANNEL_BRIDGE">>=EventName, UUID, Props, Node) ->
     wh_util:put_callid(UUID),
     BridgeID = props:get_value(<<"variable_bridge_uuid">>, Props),
     DialPlan = props:get_value(<<"Caller-Dialplan">>, Props),
-    Direction = props:get_value(<<"Call-Direction">>, Props),
+    Direction = kzd_freeswitch:call_direction(Props),
     App = props:get_value(<<"variable_current_application">>, Props),
     Destination = props:get_value(<<"Caller-Destination-Number">>, Props),
 

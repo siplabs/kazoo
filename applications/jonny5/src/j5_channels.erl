@@ -23,9 +23,9 @@
 -export([account/1]).
 -export([to_props/1]).
 -export([authorized/1]).
--export([remove/1]).
 -export([handle_authz_resp/2]).
 -export([handle_rate_resp/2]).
+-export([handle_channel_destroy/2]).
 -export([init/1
          ,handle_call/3
          ,handle_cast/2
@@ -84,12 +84,20 @@
                               ,'federate'
                              ]
                     }
+                   ,{'call', [{'restrict_to', [<<"CHANNEL_DESTROY">>, <<"CHANNEL_DISCONNECTED">>]}
+                              ,'federate'
+                             ]
+
+                    }
                   ]).
 -define(RESPONDERS, [{{?MODULE, 'handle_authz_resp'}
                       ,[{<<"authz">>, <<"authz_resp">>}]
                      }
                      ,{{?MODULE, 'handle_rate_resp'}
                        ,[{<<"rate">>, <<"resp">>}]
+                      }
+                     ,{{?MODULE, 'handle_channel_destroy'}
+                       ,[{<<"call_event">>, <<"*">>}]
                       }
                     ]).
 -define(QUEUE_NAME, <<>>).
@@ -101,12 +109,9 @@
 %%%===================================================================
 
 %%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
+%% @doc Starts the server
 %%--------------------------------------------------------------------
+-spec start_link() -> startlink_ret().
 start_link() ->
     gen_listener:start_link({'local', ?SERVER}
                             ,?MODULE
@@ -120,7 +125,8 @@ start_link() ->
                            ).
 
 -spec sync() -> 'ok'.
-sync() -> gen_server:cast(?SERVER, 'synchronize_channels').
+sync() ->
+    gen_server:cast(?SERVER, 'synchronize_channels').
 
 -spec total_calls(ne_binary()) -> non_neg_integer().
 total_calls(AccountId) ->
@@ -361,7 +367,7 @@ accounts() ->
                 ],
     accounts(ets:select(?TAB, MatchSpec), sets:new()).
 
--spec accounts(any(), set()) -> ne_binaries().
+-spec accounts(any(), sets:set()) -> ne_binaries().
 accounts([], Accounts) ->
     lists:reverse(sets:to_list(Accounts));
 accounts([['undefined', 'undefined']|Ids], Accounts) ->
@@ -442,9 +448,6 @@ to_props(#channel{call_id=CallId
 -spec authorized(wh_json:object()) -> 'ok'.
 authorized(JObj) -> gen_server:cast(?SERVER, {'authorized', JObj}).
 
--spec remove(ne_binary()) -> 'ok'.
-remove(CallId) -> gen_server:cast(?SERVER, {'remove', CallId}).
-
 -spec handle_authz_resp(wh_json:object(), wh_proplist()) -> 'ok'.
 handle_authz_resp(JObj, _Props) ->
     'true' = wapi_authz:authz_resp_v(JObj),
@@ -458,6 +461,13 @@ handle_rate_resp(JObj, Props) ->
     'true' = wapi_rate:resp_v(JObj),
     Srv = props:get_value('server', Props),
     gen_server:cast(Srv, {'rate_resp', JObj}).
+
+-spec handle_channel_destroy(wh_json:object(), wh_proplist()) -> 'ok'.
+handle_channel_destroy(JObj, Props) ->
+    'true' = wapi_call:event_v(JObj),
+    CallId = kz_call_event:call_id(JObj),
+    Srv = props:get_value('server', Props),
+    gen_server:cast(Srv, {'remove', CallId}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -681,24 +691,24 @@ is_allotment(_) -> 'false'.
 count_unique_calls(Channels) ->
     sets:size(count_unique_calls(Channels, sets:new())).
 
--spec count_unique_calls(unique_channels(), set()) -> set().
+-spec count_unique_calls(unique_channels(), sets:set()) -> sets:set().
 count_unique_calls([], Set) -> Set;
 count_unique_calls([{CallId, 'undefined'}|Channels], Set) ->
     count_unique_calls(Channels, sets:add_element(CallId, Set));
 count_unique_calls([{_, CallId}|Channels], Set) ->
     count_unique_calls(Channels, sets:add_element(CallId, Set)).
 
--spec j5_channel_ids() -> set().
+-spec j5_channel_ids() -> sets:set().
 j5_channel_ids() ->
     sets:from_list(
       ets:select(?TAB, [{#channel{call_id='$1', _='_'}, [], ['$1']}])
      ).
 
--spec ecallmgr_channel_ids(wh_json:objects()) -> set().
+-spec ecallmgr_channel_ids(wh_json:objects()) -> sets:set().
 ecallmgr_channel_ids(JObjs) ->
     ecallmgr_channel_ids(JObjs, sets:new()).
 
--spec ecallmgr_channel_ids(wh_json:objects(), set()) -> set().
+-spec ecallmgr_channel_ids(wh_json:objects(), sets:set()) -> sets:set().
 ecallmgr_channel_ids([], ChannelIds) -> ChannelIds;
 ecallmgr_channel_ids([JObj|JObjs], ChannelIds) ->
     Channels = wh_json:get_value(<<"Channels">>, JObj),
@@ -709,7 +719,7 @@ ecallmgr_channel_ids([JObj|JObjs], ChannelIds) ->
                    end, ChannelIds, wh_json:get_keys(Channels))
      ).
 
--spec fix_channel_disparity(set(), set()) -> 'ok'.
+-spec fix_channel_disparity(sets:set(), sets:set()) -> 'ok'.
 fix_channel_disparity(LocalChannelIds, EcallmgrChannelIds) ->
     Disparity = sets:to_list(sets:subtract(LocalChannelIds, EcallmgrChannelIds)),
     fix_channel_disparity(Disparity).

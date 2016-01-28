@@ -19,7 +19,7 @@
          ,post/2
         ]).
 
--include("../crossbar.hrl").
+-include("crossbar.hrl").
 
 -type endpoints_return() :: {wh_json:objects(), cb_context:context()}.
 
@@ -338,17 +338,17 @@ get_channels(Context, Devices, PublisherFun) ->
 merge_user_channels_jobjs(JObjs) ->
     merge_user_channels_jobjs(JObjs, dict:new()).
 
--spec merge_user_channels_jobjs(wh_json:objects(), dict()) -> wh_json:objects().
+-spec merge_user_channels_jobjs(wh_json:objects(), dict:dict()) -> wh_json:objects().
 merge_user_channels_jobjs([], Dict) ->
     [delete_keys(Channel) || {_, Channel} <- dict:to_list(Dict)];
 merge_user_channels_jobjs([JObj|JObjs], Dict) ->
     merge_user_channels_jobjs(JObjs, merge_user_channels_jobj(JObj, Dict)).
 
--spec merge_user_channels_jobj(wh_json:object(), dict()) -> dict().
+-spec merge_user_channels_jobj(wh_json:object(), dict:dict()) -> dict:dict().
 merge_user_channels_jobj(JObj, Dict) ->
     lists:foldl(fun merge_user_channels_fold/2, Dict, wh_json:get_value(<<"Channels">>, JObj, [])).
 
--spec merge_user_channels_fold(wh_json:object(), dict()) -> dict().
+-spec merge_user_channels_fold(wh_json:object(), dict:dict()) -> dict:dict().
 merge_user_channels_fold(Channel, D) ->
     UUID = wh_json:get_value(<<"uuid">>, Channel),
     dict:store(UUID, Channel, D).

@@ -18,10 +18,7 @@
          ,post/3
         ]).
 
--include("../crossbar.hrl").
-
--define(CB_LIST, <<"ledgers/crossbar_listing">>).
--define(LIST_BY_TYPE, <<"ledgers/listing_by_type">>).
+-include("crossbar.hrl").
 
 -define(CREDIT, <<"credit">>).
 -define(DEBIT, <<"debit">>).

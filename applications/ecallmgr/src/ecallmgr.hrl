@@ -8,6 +8,7 @@
 -define(ECALLMGR_UTIL_CACHE, 'ecallmgr_util_cache').
 -define(ECALLMGR_AUTH_CACHE, 'ecallmgr_auth_cache').
 -define(ECALLMGR_CALL_CACHE, 'ecallmgr_call_cache').
+-define(ECALLMGR_INTERACTION_CACHE, 'ecallmgr_interaction_cache').
 
 -define(CHANNELS_TBL, 'ecallmgr_channels').
 
@@ -79,6 +80,9 @@
                   ,handling_locally = 'false' :: boolean() | '_' %% is this ecallmgr handling the call control?
                   ,to_tag :: api_binary() | '_'
                   ,from_tag :: api_binary() | '_'
+                  ,interaction_id :: api_binary() | '$5' | '_'
+                  ,callee_number :: api_binary() | '$5' | '_'
+                  ,callee_name :: api_binary() | '$5' | '_'
                  }).
 
 -type channel() :: #channel{}.
@@ -140,7 +144,7 @@
 -define(SANITY_CHECK_PERIOD, 300 * ?MILLISECONDS_IN_SECOND).
 
 -define(APP_NAME, <<"ecallmgr">>).
--define(APP_VERSION, <<"0.8.0">>).
+-define(APP_VERSION, <<"4.0.0">>).
 
 -define(STARTUP_FILE, [code:lib_dir('ecallmgr', 'priv'), "/startup.config"]).
 -define(SETTINGS_FILE, [code:lib_dir('ecallmgr', 'priv'), "/settings.config"]).
@@ -156,8 +160,11 @@
 %% When an event occurs, we include all prefixed vars in the API message
 -define(CHANNEL_VAR_PREFIX, "ecallmgr_").
 
+-define(CCV(Key), <<?CHANNEL_VAR_PREFIX, Key/binary>>).
 -define(GET_CCV(Key), <<"variable_", ?CHANNEL_VAR_PREFIX, Key/binary>>).
 -define(SET_CCV(Key, Value), <<?CHANNEL_VAR_PREFIX, Key/binary, "=", Value/binary>>).
+-define(GET_CCV_HEADER(Key), <<"variable_sip_h_X-", ?CHANNEL_VAR_PREFIX, Key/binary>>).
+-define(GET_CUSTOM_HEADER(Key), <<"variable_sip_h_X-", Key/binary>>).
 
 -define(CREDS_KEY(Realm, Username), {'authn', Username, Realm}).
 
@@ -178,6 +185,7 @@
                                ,{<<"Caller-ID-Number">>, <<"effective_caller_id_number">>}
                                ,{<<"Callee-ID-Name">>, <<"effective_callee_id_name">>}
                                ,{<<"Callee-ID-Number">>, <<"effective_callee_id_number">>}
+
                                ,{<<"Progress-Timeout">>, <<"progress_timeout">>}
                                ,{<<"Ignore-Early-Media">>, <<"ignore_early_media">>}
                                ,{<<"Continue-On-Fail">>, <<"continue_on_fail">>}
@@ -200,7 +208,9 @@
                                ,{<<"Origination-UUID">>, <<"origination_uuid">>}
                                ,{<<"Ignore-Display-Updates">>, <<"ignore_display_updates">>}
                                ,{<<"Eavesdrop-Group-ID">>, <<"eavesdrop_group">>}
-                               ,{<<"Loopback-Bowout">>, <<"loopback_bowout_on_execute">>}
+
+                               ,{<<"Loopback-Bowout">>, <<"loopback_bowout">>}
+                               ,{<<"Simplify-Loopback">>, <<"loopback_bowout_on_execute">>}
 
                                ,{<<"SIP-Invite-Domain">>, <<"sip_invite_domain">>}
                                ,{<<"Media-Encryption-Enforce-Security">>,<<"sdp_secure_savp_only">>}
@@ -228,6 +238,8 @@
                                ,{<<"recording_follow_transfer">>, <<"recording_follow_transfer">>}
                                ,{<<"recording_follow_attxfer">>, <<"recording_follow_attxfer">>}
                                ,{<<"Record-Min-Sec">>, <<"record_min_sec">>}
+                               ,{<<"record_min_sec">>, <<"record_min_sec">>}
+
                                ,{<<"enable_file_write_buffering">>, <<"enable_file_write_buffering">>}
                                ,{<<"RECORD_APPEND">>, <<"RECORD_APPEND">>}
                                ,{<<"fax_enable_t38_request">>, <<"fax_enable_t38_request">>}
@@ -258,6 +270,8 @@
                                ,{<<"Fax-Doc-DB">>, <<"fax_doc_database">>}
                                ,{<<"default_language">>, <<"default_language">>}
                                ,{<<"Default-Language">>, <<"default_language">>}
+                               ,{<<"RECORD_STEREO">>, <<"RECORD_STEREO">>}
+                               ,{<<"RECORD_SOFTWARE">>, <<"RECORD_SOFTWARE">>}
                               ]).
 
 %% [{FreeSWITCH-App-Name, Kazoo-App-Name}]
@@ -310,10 +324,17 @@
                     ,'CHANNEL_DATA', 'CALL_SECURE'
                    ]).
 
+-define(FS_SOFIA_TRANSFER_EVENTS, ['sofia::transferor'
+                                   ,'sofia::transferee'
+                                   ,'sofia::replaced'
+                                   ,'sofia::intercepted'
+                                  ]).
+-define(IS_SOFIA_TRANSFER(N), lists:member(wh_util:to_atom(N, 'true'), ?FS_SOFIA_TRANSFER_EVENTS)).
+
 -define(FS_CUSTOM_EVENTS, ['whistle::noop', 'whistle::masquerade'
                            ,'sofia::transferor', 'sofia::transferee'
-                           ,'sofia::replaced', 'sofia::register'
-                           ,'sofia::intercepted'
+                           ,'sofia::replaced','sofia::intercepted'
+                           ,'sofia::register'
                            ,'conference::maintenance'
                            ,'spandsp::txfaxresult'
                            ,'spandsp::rxfaxresult'
@@ -422,7 +443,14 @@
 -define(SEPARATOR_SIMULTANEOUS, <<",">>).
 -define(SEPARATOR_SINGLE, <<"|">>).
 
+
 -define(CHANNEL_VARS_EXT, "Execute-Extension-Original-").
+
+-define(CALL_INTERACTION_ID, "Call-Interaction-ID").
+-define(CALL_INTERACTION_DEFAULT
+        ,<<(wh_util:to_binary(wh_util:current_tstamp()))/binary
+           ,"-", (wh_util:rand_hex_binary(4))/binary
+         >>).
 
 -define(ECALLMGR_HRL, 'true').
 -endif.

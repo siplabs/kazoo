@@ -25,11 +25,13 @@
 
 -include("webhooks.hrl").
 
+-define(SERVER, ?MODULE).
+
 -define(EXPIRY_MSG, 'failure_check').
 
--spec start_link() -> 'ignore'.
+-spec start_link() -> startlink_ret().
 start_link() ->
-    gen_server:start_link(?MODULE, [], []).
+    gen_server:start_link(?SERVER, [], []).
 
 -spec init(any()) -> {'ok', reference()}.
 init(_) ->
@@ -113,7 +115,7 @@ maybe_remove_failure(_K, _AccountId, _HookId) ->
 find_failures(Keys) ->
     dict:to_list(lists:foldl(fun process_failed_key/2, dict:new(), Keys)).
 
--spec process_failed_key(tuple(), dict()) -> dict().
+-spec process_failed_key(tuple(), dict:dict()) -> dict:dict().
 process_failed_key(?FAILURE_CACHE_KEY(AccountId, HookId, _Timestamp)
                    ,Dict
                   ) ->

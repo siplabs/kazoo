@@ -48,15 +48,15 @@
 %% rr :: Round Robin
 %% mi :: Most Idle
 -type queue_strategy() :: 'rr' | 'mi'.
--type queue_strategy_state() :: queue() | ne_binaries().
+-type queue_strategy_state() :: queue:queue() | ne_binaries().
 
--record(state, {ignored_member_calls = dict:new() :: dict()
+-record(state, {ignored_member_calls = dict:new() :: dict:dict()
                 ,account_id :: api_binary()
                 ,queue_id :: api_binary()
                 ,supervisor :: pid()
                 ,strategy = 'rr' :: queue_strategy() % round-robin | most-idle
                 ,strategy_state :: queue_strategy_state() % based on the strategy
-                ,known_agents = dict:new() :: dict() % how many agent processes are available {AgentId, Count}
+                ,known_agents = dict:new() :: dict:dict() % how many agent processes are available {AgentId, Count}
                 ,enter_when_empty = 'true' :: boolean() % allow caller into queue if no agents are logged in
                 ,moh :: api_binary()
                }).
@@ -111,18 +111,14 @@
 %%%===================================================================
 
 %%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
+%% @doc Starts the server
 %%--------------------------------------------------------------------
 -spec start_link(pid(), wh_json:object()) -> startlink_ret().
 start_link(Super, QueueJObj) ->
     AccountId = wh_doc:account_id(QueueJObj),
     QueueId = wh_doc:id(QueueJObj),
 
-    gen_listener:start_link(?MODULE
+    gen_listener:start_link(?SERVER
                             ,[{'bindings', ?BINDINGS(AccountId, QueueId)}
                               ,{'responders', ?RESPONDERS}
                              ]
@@ -131,7 +127,7 @@ start_link(Super, QueueJObj) ->
 
 -spec start_link(pid(), ne_binary(), ne_binary()) -> startlink_ret().
 start_link(Super, AccountId, QueueId) ->
-    gen_listener:start_link(?MODULE
+    gen_listener:start_link(?SERVER
                             ,[{'bindings', ?BINDINGS(AccountId, QueueId)}
                               ,{'responders', ?RESPONDERS}
                              ]
@@ -265,14 +261,7 @@ pick_winner(Srv, Resps) -> pick_winner(Srv, Resps, strategy(Srv), next_winner(Sr
 
 %%--------------------------------------------------------------------
 %% @private
-%% @doc
-%% Initializes the server
-%%
-%% @spec init(Args) -> {ok, State} |
-%%                     {ok, State, Timeout} |
-%%                     ignore |
-%%                     {stop, Reason}
-%% @end
+%% @doc Initializes the server
 %%--------------------------------------------------------------------
 init([Super, QueueJObj]) ->
     AccountId = wh_doc:account_id(QueueJObj),
@@ -634,8 +623,8 @@ pick_winner(_Mgr, CRs, 'mi', _) ->
 
     {[MostIdle|Same], Other}.
 
--spec update_strategy_with_agent(queue_strategy(), queue_strategy_state(), dict(), ne_binary(), 'add' | 'remove') ->
-                                        {queue_strategy_state(), dict()}.
+-spec update_strategy_with_agent(queue_strategy(), queue_strategy_state(), dict:dict(), ne_binary(), 'add' | 'remove') ->
+                                        {queue_strategy_state(), dict:dict()}.
 update_strategy_with_agent('rr', 'undefined', As, AgentId, 'add') ->
     {queue:in(AgentId, queue:new()), dict:update_counter(AgentId, 1, As)};
 update_strategy_with_agent('rr', AgentQueue, As, AgentId, 'add') ->

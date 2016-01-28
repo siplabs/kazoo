@@ -26,6 +26,8 @@
 
 -include("cccp.hrl").
 
+-define(SERVER, ?MODULE).
+
 -record(state, {call = whapps_call:new() :: whapps_call:call()
                 ,flow = wh_json:new() :: wh_json:object()
                 ,relay_pid :: api_pid()
@@ -67,14 +69,16 @@ send_route_win(JObj, Props) ->
     wapi_route:publish_win(wh_json:get_value(<<"Server-ID">>, JObj), Win).
 
 %%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
+%% @doc Starts the server
 %%--------------------------------------------------------------------
+-spec start_link(whapps_call:call()) -> startlink_ret().
 start_link(Call) ->
-    gen_listener:start_link(?MODULE, [{'bindings', ?BINDINGS(whapps_call:call_id(Call))}
+    CallId = whapps_call:call_id(Call),
+    Bindings = [{'call', [{'callid', CallId}]}
+               ,{'self', []}
+               ],
+
+    gen_listener:start_link(?SERVER, [{'bindings', Bindings}
                                       ,{'responders', ?RESPONDERS}
                                       ,{'queue_name', ?QUEUE_NAME}       % optional to include
                                       ,{'queue_options', ?QUEUE_OPTIONS} % optional to include

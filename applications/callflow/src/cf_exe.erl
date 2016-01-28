@@ -33,6 +33,7 @@
 -export([callid_update/2]).
 -export([add_event_listener/2]).
 -export([next/1, next/2]).
+-export([update_call/2]).
 
 %% gen_listener callbacks
 -export([init/1
@@ -46,6 +47,8 @@
 
 -include("callflow.hrl").
 -include_lib("whistle/src/wh_json.hrl").
+
+-define(SERVER, ?MODULE).
 
 -define(CALL_SANITY_CHECK, 30000).
 
@@ -67,19 +70,18 @@
                 ,self = self()
                 ,stop_on_destroy = 'true' :: boolean()
                 ,destroyed = 'false' :: boolean()
+                ,branch_count :: non_neg_integer()
                }).
 -type state() :: #state{}.
+
+-define(MAX_BRANCH_COUNT, whapps_config:get_integer(?CF_CONFIG_CAT, <<"max_branch_count">>, 50)).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
 %%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start_link() -> {'ok', Pid} | 'ignore' | {'error', Error}
-%% @end
+%% @doc Starts the server
 %%--------------------------------------------------------------------
 -spec start_link(whapps_call:call()) -> startlink_ret().
 start_link(Call) ->
@@ -87,7 +89,7 @@ start_link(Call) ->
     Bindings = [{'call', [{'callid', CallId}]}
                 ,{'self', []}
                ],
-    gen_listener:start_link(?MODULE, [{'responders', ?RESPONDERS}
+    gen_listener:start_link(?SERVER, [{'responders', ?RESPONDERS}
                                       ,{'bindings', Bindings}
                                       ,{'queue_name', ?QUEUE_NAME}
                                       ,{'queue_options', ?QUEUE_OPTIONS}
@@ -105,6 +107,11 @@ get_call(Call) ->
 set_call(Call) ->
     Srv = whapps_call:kvs_fetch('consumer_pid', Call),
     gen_server:cast(Srv, {'set_call', Call}).
+
+-spec update_call(whapps_call:call(), list()) -> whapps_call:call().
+update_call(Call, Routines) ->
+    Srv = whapps_call:kvs_fetch('consumer_pid', Call),
+    gen_server:call(Srv, {'update_call', Routines}).
 
 -spec continue(whapps_call:call() | pid()) -> 'ok'.
 -spec continue(ne_binary(), whapps_call:call() | pid()) -> 'ok'.
@@ -300,7 +307,9 @@ init([Call]) ->
     CallId = whapps_call:call_id(Call),
     wh_util:put_callid(CallId),
     gen_listener:cast(self(), 'initialize'),
-    {'ok', #state{call=Call}}.
+    {'ok', #state{call=Call
+                  ,branch_count = ?MAX_BRANCH_COUNT
+                 }}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -316,6 +325,9 @@ init([Call]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_call({'update_call', Routines}, _From, #state{call=Call}=State) ->
+    NewCall = whapps_call:exec(Routines, Call),
+    {'reply', NewCall, State#state{call=NewCall}};
 handle_call('get_call', _From, #state{call=Call}=State) ->
     {'reply', {'ok', Call}, State};
 handle_call('callid', _From, #state{call=Call}=State) ->
@@ -412,14 +424,29 @@ handle_cast('continue_on_destroy', State) ->
 handle_cast({'continue_with_flow', NewFlow}, State) ->
     lager:info("callflow has been reset"),
     {'noreply', launch_cf_module(State#state{flow=NewFlow})};
-handle_cast({'branch', NewFlow}, #state{flow=Flow, flows=Flows}=State) ->
+
+handle_cast({'branch', _NewFlow}, #state{branch_count=BC}=State) when BC =< 0 ->
+    lager:warning("callflow exceeded max branch count, terminating"),
+    {'stop', 'normal', State};
+handle_cast({'branch', NewFlow}, #state{flow=Flow
+                                        ,flows=Flows
+                                        ,branch_count=BC
+                                       }=State) ->
     lager:info("callflow has been branched"),
     case wh_json:get_ne_value([<<"children">>, <<"_">>], Flow) of
         'undefined' ->
-            {'noreply', launch_cf_module(State#state{flow=NewFlow})};
+            {'noreply', launch_cf_module(State#state{flow=NewFlow
+                                                     ,branch_count=BC-1
+                                                    })};
         PrevFlow ->
-            {'noreply', launch_cf_module(State#state{flow=NewFlow, flows=[PrevFlow|Flows]})}
+            {'noreply', launch_cf_module(State#state{flow=NewFlow
+                                                     ,flows=[PrevFlow|Flows]
+                                                     ,branch_count=BC-1
+                                                    }
+                                        )
+            }
     end;
+
 handle_cast({'callid_update', NewCallId}, #state{call=Call}=State) ->
     wh_util:put_callid(NewCallId),
     PrevCallId = whapps_call:call_id_direct(Call),
@@ -429,21 +456,10 @@ handle_cast({'callid_update', NewCallId}, #state{call=Call}=State) ->
     lager:info("binding to new call events"),
     gen_listener:add_binding(self(), 'call', [{'callid', NewCallId}]),
     {'noreply', State#state{call=whapps_call:set_call_id(NewCallId, Call)}};
-handle_cast({'add_event_listener', {M, A}}, #state{call=Call}=State) ->
-    lager:debug("trying to start evt listener ~s: ~p", [M, A]),
-    try cf_event_handler_sup:new(event_listener_name(Call, M), M, [whapps_call:clear_helpers(Call) | A]) of
-        {'ok', P} when is_pid(P) ->
-            lager:debug("started event listener ~p from ~s", [P, M]),
-            {'noreply', State};
-        _E ->
-            lager:debug("error starting event listener: ~p", [_E]),
-            {'noreply', State}
-    catch
-        _:_R ->
-            lager:info("failed to spawn ~s:~s: ~p", [M, _R]),
-            {'noreply', State}
-    end;
-handle_cast('initialize', #state{call=Call}) ->
+handle_cast({'add_event_listener', {Mod, Args}}, #state{call=Call}=State) ->
+    cf_util:start_event_listener(Call, Mod, Args),
+    {'noreply', State};
+handle_cast('initialize', #state{call=Call}=State) ->
     log_call_information(Call),
     Flow = whapps_call:kvs_fetch('cf_flow', Call),
     Updaters = [fun(C) -> whapps_call:kvs_store('consumer_pid', self(), C) end
@@ -452,7 +468,7 @@ handle_cast('initialize', #state{call=Call}) ->
                ],
     CallWithHelpers = lists:foldr(fun(F, C) -> F(C) end, Call, Updaters),
     _ = wh_util:spawn(fun cf_singular_call_hooks:maybe_hook_call/1, [CallWithHelpers]),
-    {'noreply', #state{call=CallWithHelpers
+    {'noreply', State#state{call=CallWithHelpers
                        ,flow=Flow
                       }};
 handle_cast({'gen_listener', {'created_queue', Q}}, #state{call=Call}=State) ->
@@ -470,10 +486,6 @@ handle_cast({'gen_listener', {'is_consuming', 'true'}}
 handle_cast(_Msg, State) ->
     lager:debug("unhandled cast: ~p", [_Msg]),
     {'noreply', State}.
-
--spec event_listener_name(whapps_call:call(), atom() | ne_binary()) -> ne_binary().
-event_listener_name(Call, Module) ->
-    <<(whapps_call:call_id_direct(Call))/binary, "-", (wh_util:to_binary(Module))/binary>>.
 
 %%--------------------------------------------------------------------
 %% @private

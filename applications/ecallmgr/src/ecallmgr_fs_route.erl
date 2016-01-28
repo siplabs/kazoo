@@ -20,10 +20,10 @@
          ,code_change/3
         ]).
 
--define(SERVER, ?MODULE).
-
 -include_lib("nksip/include/nksip.hrl").
 -include("ecallmgr.hrl").
+
+-define(SERVER, ?MODULE).
 
 -record(state, {node = 'undefined' :: atom()
                 ,options = [] :: wh_proplist()
@@ -48,18 +48,13 @@
 %%%===================================================================
 
 %%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
+%% @doc Starts the server
 %%--------------------------------------------------------------------
 -spec start_link(atom()) -> startlink_ret().
--spec start_link(atom(), list()) -> startlink_ret().
-start_link(Node) ->
-    start_link(Node, []).
+-spec start_link(atom(), wh_proplist()) -> startlink_ret().
+start_link(Node) -> start_link(Node, []).
 start_link(Node, Options) ->
-    gen_server:start_link(?MODULE, [Node, Options], []).
+    gen_server:start_link(?SERVER, [Node, Options], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -226,42 +221,42 @@ init_message_props(Props) ->
 
 -spec add_message_missing_props(wh_proplist()) -> wh_proplist().
 add_message_missing_props(Props) ->
-    lists:foldl(fun({K, _V}= A,B) ->
-                        case props:get_value(K, Props) of
-                            'undefined' -> [A | B];
-                            _Else -> B
-                        end
-                end, Props,
-                [{<<"Call-Direction">>, <<"outbound">>}
-                 ,{<<"Resource-Type">>,<<"sms">>}
-                 ,{<<"Message-ID">>, wh_util:rand_hex_binary(16)}
-                 ,{<<"Caller-Caller-ID-Number">>, props:get_value(<<"from_user">>, Props)}
-                 ,{<<"Caller-Destination-Number">>, props:get_value(<<"to_user">>, Props)}
-                ]).
+    props:insert_values(
+      [{<<"Call-Direction">>, <<"outbound">>}
+      ,{<<"Resource-Type">>,<<"sms">>}
+      ,{<<"Message-ID">>, wh_util:rand_hex_binary(16)}
+      ,{<<"Caller-Caller-ID-Number">>, props:get_value(<<"from_user">>, Props)}
+      ,{<<"Caller-Destination-Number">>, props:get_value(<<"to_user">>, Props)}
+      ]
+      ,Props
+     ).
 
 -spec expand_message_vars(wh_proplist()) -> wh_proplist().
 expand_message_vars(Props) ->
-    lists:foldl(fun({K,V}, Ac) ->
-                        case props:get_value(<<"variable_", K/binary>>, Ac) of
-                            'undefined' -> props:set_value(<<"variable_", K/binary>>, V, Ac);
-                            _ -> Ac
-                        end
-                end, Props,
-                props:filter(fun should_expand_var/1, Props)
-                 ).
+    lists:foldl(fun expand_message_var/2
+                ,Props
+                ,props:filter(fun should_expand_var/1, Props)
+               ).
+
+-spec expand_message_var({ne_binary(), ne_binary()}, wh_proplist()) ->
+                                wh_proplist().
+expand_message_var({K,V}, Ac) ->
+    case props:get_value(<<"variable_", K/binary>>, Ac) of
+        'undefined' -> props:set_value(<<"variable_", K/binary>>, V, Ac);
+        _ -> Ac
+    end.
 
 -spec process_route_req(atom(), atom(), ne_binary(), ne_binary(), wh_proplist()) -> 'ok'.
 process_route_req(Section, Node, FetchId, CallId, Props) ->
     wh_util:put_callid(CallId),
     case wh_util:is_true(props:get_value(<<"variable_recovered">>, Props)) of
-        'false' -> search_for_route(Section, Node, FetchId, CallId, Props);
+        'false' -> search_for_route(Section, Node, FetchId, CallId, ecallmgr_fs_loopback:filter(Node, CallId, Props));
         'true' ->
             lager:debug("recovered channel already exists on ~s, park it", [Node]),
             JObj = wh_json:from_list([{<<"Routes">>, []}
                                       ,{<<"Method">>, <<"park">>}
-                                      ,{<<"Context">>, hunt_context(Props)}
                                      ]),
-            reply_affirmative(Section, Node, FetchId, CallId, JObj)
+            reply_affirmative(Section, Node, FetchId, CallId, JObj, Props)
     end.
 
 -spec search_for_route(atom(), atom(), ne_binary(), ne_binary(), wh_proplist()) -> 'ok'.
@@ -278,25 +273,22 @@ search_for_route(Section, Node, FetchId, CallId, Props) ->
             lager:info("did not receive route response for request ~s: ~p", [FetchId, _R]);
         {'ok', JObj} ->
             'true' = wapi_route:resp_v(JObj),
-            J = wh_json:set_value(<<"Context">>, hunt_context(Props), JObj),
-            maybe_wait_for_authz(Section, Node, FetchId, CallId, J)
+            maybe_wait_for_authz(Section, Node, FetchId, CallId
+                                 , JObj
+                                 , Props)
     end.
 
--spec hunt_context(wh_proplist()) -> api_binary().
-hunt_context(Props) ->
-    props:get_value(<<"Hunt-Context">>, Props, ?DEFAULT_FREESWITCH_CONTEXT).
-
--spec maybe_wait_for_authz(atom(), atom(), ne_binary(), ne_binary(), wh_json:object()) -> 'ok'.
-maybe_wait_for_authz(Section, Node, FetchId, CallId, JObj) ->
-    case wh_util:is_true(ecallmgr_config:get(<<"authz_enabled">>, 'false'))
+-spec maybe_wait_for_authz(atom(), atom(), ne_binary(), ne_binary(), wh_json:object(), wh_proplist()) -> 'ok'.
+maybe_wait_for_authz(Section, Node, FetchId, CallId, JObj, Props) ->
+    case ecallmgr_config:is_true(<<"authz_enabled">>, 'false')
         andalso wh_json:get_value(<<"Method">>, JObj) =/= <<"error">>
     of
-        'true' -> wait_for_authz(Section, Node, FetchId, CallId, JObj);
-        'false' -> reply_affirmative(Section, Node, FetchId, CallId, JObj)
+        'true' -> wait_for_authz(Section, Node, FetchId, CallId, JObj, Props);
+        'false' -> reply_affirmative(Section, Node, FetchId, CallId, JObj, Props)
     end.
 
--spec wait_for_authz(atom(), atom(), ne_binary(), ne_binary(), wh_json:object()) -> 'ok'.
-wait_for_authz(Section, Node, FetchId, CallId, JObj) ->
+-spec wait_for_authz(atom(), atom(), ne_binary(), ne_binary(), wh_json:object(), wh_proplist()) -> 'ok'.
+wait_for_authz(Section, Node, FetchId, CallId, JObj, Props) ->
     case wh_cache:wait_for_key_local(?ECALLMGR_UTIL_CACHE, ?AUTHZ_RESPONSE_KEY(CallId)) of
         {'ok', {'true', AuthzCCVs}} ->
             _ = wh_cache:erase_local(?ECALLMGR_UTIL_CACHE, ?AUTHZ_RESPONSE_KEY(CallId)),
@@ -305,7 +297,7 @@ wait_for_authz(Section, Node, FetchId, CallId, JObj) ->
                                   ,wh_json:merge_jobjs(CCVs, AuthzCCVs)
                                   ,JObj
                                  ),
-            reply_affirmative(Section, Node, FetchId, CallId, J);
+            reply_affirmative(Section, Node, FetchId, CallId, J, Props);
         _Else -> reply_forbidden(Section, Node, FetchId)
     end.
 
@@ -313,21 +305,24 @@ wait_for_authz(Section, Node, FetchId, CallId, JObj) ->
 -spec reply_forbidden(atom(), atom(), ne_binary()) -> 'ok'.
 reply_forbidden(Section, Node, FetchId) ->
     lager:info("received forbidden route response for ~s, sending 403 Incoming call barred", [FetchId]),
-    {'ok', XML} = ecallmgr_fs_xml:route_resp_xml([{<<"Method">>, <<"error">>}
-                                                  ,{<<"Route-Error-Code">>, <<"403">>}
-                                                  ,{<<"Route-Error-Message">>, <<"Incoming call barred">>}
-                                                  ,{<<"Fetch-Section">>, wh_util:to_binary(Section)}
-                                                 ]),
+    {'ok', XML} = ecallmgr_fs_xml:route_resp_xml(
+                    [{<<"Method">>, <<"error">>}
+                     ,{<<"Route-Error-Code">>, <<"403">>}
+                     ,{<<"Route-Error-Message">>, <<"Incoming call barred">>}
+                     ,{<<"Fetch-Section">>, wh_util:to_binary(Section)}
+                    ]
+                    , []),
     lager:debug("sending XML to ~s: ~s", [Node, XML]),
     case freeswitch:fetch_reply(Node, FetchId, Section, iolist_to_binary(XML), 3 * ?MILLISECONDS_IN_SECOND) of
         'ok' -> lager:info("node ~s accepted ~s route response for request ~s", [Node, Section, FetchId]);
         {'error', Reason} -> lager:debug("node ~s rejected our ~s route unauthz: ~p", [Node, Section, Reason])
     end.
 
--spec reply_affirmative(atom(), atom(), ne_binary(), ne_binary(), wh_json:object()) -> 'ok'.
-reply_affirmative(Section, Node, FetchId, CallId, JObj) ->
+-spec reply_affirmative(atom(), atom(), ne_binary(), ne_binary(), wh_json:object(), wh_proplist()) -> 'ok'.
+reply_affirmative(Section, Node, FetchId, CallId, PreFetchJObj, Props) ->
     lager:info("received affirmative route response for request ~s", [FetchId]),
-    {'ok', XML} = ecallmgr_fs_xml:route_resp_xml(JObj),
+    JObj = wh_json:set_value(<<"Fetch-Section">>, wh_util:to_binary(Section), PreFetchJObj),
+    {'ok', XML} = ecallmgr_fs_xml:route_resp_xml(JObj, Props),
     lager:debug("sending XML to ~s: ~s", [Node, XML]),
     case freeswitch:fetch_reply(Node, FetchId, Section, iolist_to_binary(XML), 3 * ?MILLISECONDS_IN_SECOND) of
         {'error', _Reason} -> lager:debug("node ~s rejected our ~s route response: ~p", [Node, Section, _Reason]);
@@ -360,7 +355,7 @@ start_call_handling(Node, FetchId, CallId, JObj) ->
 
     lager:debug("started event ~p and control ~p processes", [_Evt, _Ctl]),
 
-    ecallmgr_util:set(Node, CallId, wh_json:to_proplist(CCVs)).
+    ecallmgr_fs_command:set(Node, CallId, wh_json:to_proplist(CCVs)).
 
 -spec start_message_handling(atom(), ne_binary(), ne_binary(), wh_json:object()) -> 'ok'.
 start_message_handling(_Node, _FetchId, CallId, JObj) ->
@@ -408,14 +403,15 @@ route_req(CallId, FetchId, Props, Node) ->
 -spec route_req_ccvs(ne_binary(), wh_proplist()) -> wh_proplist().
 route_req_ccvs(FetchId, Props) ->
     {RedirectedBy, RedirectedReason} = get_redirected(Props),
-
+    CCVs = ecallmgr_util:custom_channel_vars(Props),
     props:filter_undefined(
-      [{<<"Fetch-ID">>, FetchId}
+      [{<<?CALL_INTERACTION_ID>>, props:get_value(<<?CALL_INTERACTION_ID>>, CCVs, ?CALL_INTERACTION_DEFAULT)}
+       ,{<<"Fetch-ID">>, FetchId}
        ,{<<"Redirected-By">>, RedirectedBy}
        ,{<<"Redirected-Reason">>, RedirectedReason}
        ,{<<"Caller-Privacy-Number">>, ?CALLER_PRIVACY_NUMBER(Props)}
        ,{<<"Caller-Privacy-Name">>, ?CALLER_PRIVACY_NAME(Props)}
-       | ecallmgr_util:custom_channel_vars(Props)
+       | props:delete(<<?CALL_INTERACTION_ID>>, CCVs)
       ]
      ).
 

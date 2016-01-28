@@ -24,6 +24,8 @@
 
 -include("omnipresence.hrl").
 
+-define(SERVER, ?MODULE).
+
 -record(state, {}).
 
 %%%===================================================================
@@ -31,14 +33,11 @@
 %%%===================================================================
 
 %%--------------------------------------------------------------------
-%% @doc
-%% Starts the server
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
-%% @end
+%% @doc Starts the server
 %%--------------------------------------------------------------------
+-spec start_link() -> startlink_ret().
 start_link() ->
-    gen_server:start_link({'local', ?MODULE}, ?MODULE, [], []).
+    gen_server:start_link({'local', ?SERVER}, ?MODULE, [], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -238,6 +237,9 @@ handle_update(_JObj, _State) -> 'ok'.
 handle_update(JObj, State, Expires) ->
     To = wh_json:get_first_defined([<<"To">>, <<"Presence-ID">>], JObj),
     From = wh_json:get_first_defined([<<"From">>, <<"Presence-ID">>], JObj),
+    CallId = wh_json:get_value(<<"Call-ID">>, JObj, ?FAKE_CALLID(From)),
+    TargetCallId = wh_json:get_value(<<"Target-Call-ID">>, JObj, CallId),
+    wh_util:put_callid(TargetCallId),
 
     case omnip_util:are_valid_uris([To, From]) of
         'true' -> handle_update(JObj, State, From, To, Expires);
@@ -291,6 +293,7 @@ handle_update(JObj, State, From, To, Expires) ->
                         ,{<<"From-User">>, ToUsername}
                         ,{<<"From-Realm">>, ToRealm}
                         ,{<<"From-Tag">>, wh_json:get_value(<<"From-Tag">>, JObj)}
+                        ,{<<"From-URI">>, ToURI}
                         ,{<<"To">>, ToURI}
                         ,{<<"To-URI">>, ToURI}
                         ,{<<"To-User">>, FromUsername}
@@ -349,10 +352,12 @@ maybe_send_update(User, Props) ->
 -spec send_update(binaries(), wh_proplist()) -> 'ok'.
 send_update([], _Props) -> 'ok';
 send_update(Stalkers, Props) ->
-    lager:debug("sending amqp dialog update state ~p for ~s/~s", [props:get_value(<<"State">>, Props)
-                                                                  ,props:get_value(<<"From-User">>, Props)
-                                                                  ,props:get_value(<<"To-User">>, Props)
-                                                                 ]),
+    lager:debug("sending amqp dialog update state ~p for ~s/~s to ~p",
+                  [props:get_value(<<"State">>, Props)
+                   ,props:get_value(<<"From-User">>, Props)
+                   ,props:get_value(<<"To-User">>, Props)
+                   ,Stalkers
+                  ]),
     {'ok', Worker} = wh_amqp_worker:checkout_worker(),
     _ = [wh_amqp_worker:cast(Props
                              ,fun(P) -> wapi_omnipresence:publish_update(S, P) end
