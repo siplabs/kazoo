@@ -1,0 +1,13 @@
+{application, edr,
+ [
+  {description, "Event data record application"},
+  {vsn, "0.0.1"},
+  {registered, []},
+  {modules, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { edr_app, []}},
+  {env, []}
+ ]}.
