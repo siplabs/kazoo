@@ -25,11 +25,11 @@
 
 -record(state, {}).
 
--define(BINDINGS, []).
--define(RESPONDERS, []).
--define(QUEUE_NAME, <<>>).
--define(QUEUE_OPTIONS, []).
--define(CONSUME_OPTIONS, []).
+-define(BINDINGS, [{'edr', []}]).
+-define(RESPONDERS, [{'edr_handler', [{<<"*">>, <<"*">>}]}]).
+-define(QUEUE_NAME, <<"edr">>).
+-define(QUEUE_OPTIONS, [{'exclusive', 'false'}]).
+-define(CONSUME_OPTIONS, [{'exclusive', 'false'}]).
 
 %%%===================================================================
 %%% API

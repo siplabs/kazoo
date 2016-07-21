@@ -16,7 +16,8 @@
 
 -include("edr.hrl").
 
--define(CHILDREN, []).
+-define(CHILDREN, [?WORKER('edr_listener')
+                  ]).
 
 %% ===================================================================
 %% API functions
