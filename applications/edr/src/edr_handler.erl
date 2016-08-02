@@ -14,7 +14,6 @@
 
 -spec handle_req(wh_json:object(), wh_proplist()) -> 'ok'.
 handle_req(JObj, _Props)->
-    _Timestamp = wh_json:get_value(<<"Timestamp">>, JObj),
-    _Tags = wh_json:get_value(<<"Tags">>, JObj),
-    %% TODO: distribute_event(Timestamp, Tags)
-    'ok'.
+    Timestamp = wh_json:get_value(<<"Timestamp">>, JObj),
+    Tags = wh_json:get_value(<<"Tags">>, JObj),
+    edr_utils:distribute_event(Timestamp, Tags).

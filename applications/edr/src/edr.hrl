@@ -7,4 +7,11 @@
 
 -define(APP_NAME, <<"edr">>).
 -define(APP_VERSION, <<"0.0.1">>).
+-record(backend, {tags          :: wh_json:object()
+                  ,name         :: ne_binary()
+                  ,type         :: ne_binary()
+                  ,enabled      :: boolean()
+                  ,options      :: wh_json:object()
+                 }).
+-type backend() :: #backend{}.
 -endif.

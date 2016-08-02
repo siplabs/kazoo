@@ -67,6 +67,7 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
+    gen_listener:cast(self(), 'start_backends'),
     {'ok', #state{}}.
 
 %%--------------------------------------------------------------------
@@ -96,8 +97,16 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast(_Msg, State) ->
-    {'noreply', State}.
+handle_cast('start_backends', _State) ->
+    wh_json:foreach(fun ({Name, JBackend})->
+                            case  wh_json:is_true(<<"Enabled">>, JBackend) of
+                                'true' -> edr_backend_sup:start_backend(Name);
+                                _False -> 'ok'
+                            end
+                    end, edr_utils:registred_backends()),
+    {'noreply', _State};
+handle_cast(_Msg, _State) ->
+    {'noreply', _State}.
 
 %%--------------------------------------------------------------------
 %% @private

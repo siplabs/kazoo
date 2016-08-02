@@ -16,7 +16,8 @@
 
 -include("edr.hrl").
 
--define(CHILDREN, [?WORKER('edr_listener')
+-define(CHILDREN, [?SUPER('edr_backend_sup')
+                   ,?WORKER('edr_listener')
                   ]).
 
 %% ===================================================================
