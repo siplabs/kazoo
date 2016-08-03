@@ -1,0 +1,21 @@
+{
+    "_id": "_design/stromboli",
+    "language": "javascript",
+    "views": {
+        "account_provision_listing": {
+            "map": "function(doc) { if (doc.pvt_deleted || doc.pvt_type !== 'provision_config') return; emit(doc._id, doc._id); }"
+        },
+        "policies_listing": {
+            "map": "function(doc) { if (doc.pvt_deleted || doc.pvt_type !== 'provision_policy') return; emit(doc._id, {'id':doc._id, 'name':doc.name}); }"
+        },
+        "profiles_listing": {
+            "map": "function(doc) { if (doc.pvt_deleted || doc.pvt_type !== 'provision_profile') return; emit(doc._id, {'id':doc._id, 'name':doc.name}); }"
+        },
+        "units_listing": {
+            "map": "function(doc) { if (doc.pvt_deleted || doc.pvt_type !== 'unit') return; emit(doc._id, {'id':doc._id, 'mac':doc.mac_address}); }"
+        },
+        "units_listing_by_mac": {
+            "map": "function(doc) { if (doc.pvt_deleted || doc.pvt_type !== 'unit') return; emit(doc.mac_address, doc._id); }"
+        }
+    }
+}

@@ -1,0 +1,26 @@
+{
+    "$schema": "http://json-schema.org/draft-03/schema#",
+    "_id": "policies",
+    "description": "Policies schema",
+    "name": "Policies",
+    "properties": {
+        "name": {
+            "description": "A friendly name for a policy",
+            "maxLength": 128,
+            "minLength": 1,
+            "name": "Name",
+            "required": true,
+            "type": "string"
+        },
+        "type": {
+            "description": "A type for a policy",
+            "maxLength": 128,
+            "minLength": 1,
+            "name": "Policy",
+            "required": true,
+            "type": "string"
+        }
+    },
+    "required": false,
+    "type": "object"
+}

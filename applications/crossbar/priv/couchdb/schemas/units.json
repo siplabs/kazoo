@@ -1,0 +1,76 @@
+{
+    "$schema": "http://json-schema.org/draft-03/schema#",
+    "_id": "units",
+    "description": "A unit is a SIP phone",
+    "name": "Unit",
+    "properties": {
+        "config": {
+            "description": "The unit's configuration settings",
+            "name": "Config",
+            "required": true,
+            "type": "object"
+        },
+        "lines": {
+            "description": "An array of bindings between the phone lines and the Kazoo devices",
+            "line": {
+                "description": "Binds a phone line to a Kazoo device",
+                "device": {
+                    "description": "An ID of Kazoo device",
+                    "minLength": 1,
+                    "name": "Device ID",
+                    "required": true,
+                    "type": "string"
+                },
+                "display_name": {
+                    "description": "The value which will be displayed to others when you place a call",
+                    "minLength": 0,
+                    "name": "Line Number",
+                    "required": true,
+                    "type": "string"
+                },
+                "label": {
+                    "description": "The value which will be displayed on the line key label for this registration",
+                    "minLength": 0,
+                    "name": "Line Number",
+                    "required": true,
+                    "type": "string"
+                },
+                "line_number": {
+                    "description": "A number of phone line",
+                    "minLength": 1,
+                    "name": "Line Number",
+                    "required": true,
+                    "type": "string"
+                },
+                "name": "Line",
+                "required": true,
+                "type": "object"
+            },
+            "minLength": 1,
+            "name": "Lines",
+            "required": true,
+            "type": [
+                "object",
+                "array"
+            ]
+        },
+        "mac_address": {
+            "description": "A unit's MAC address",
+            "maxLength": 12,
+            "minLength": 12,
+            "name": "MAC address",
+            "required": true,
+            "type": "string"
+        },
+        "name": {
+            "description": "A friendly name for a unit",
+            "maxLength": 128,
+            "minLength": 1,
+            "name": "Name",
+            "required": true,
+            "type": "string"
+        }
+    },
+    "required": false,
+    "type": "object"
+}
