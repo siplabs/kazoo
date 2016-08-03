@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Application SIP Mink 4.0.4.2906 17-Apr-13 23:21 -->
+<!-- Created 07-06-2016 10:38 -->
+<polycomConfig>
+    <voice>
+        <codecs>
+            <profiles voice.audioProfile.G711Mu.payloadSize="{{config.voice.audioProfile.G711Mu.payloadSize}}"
+                voice.audioProfile.G711Mu.jitterBufferMin="{{config.voice.audioProfile.G711Mu.jitterBufferMin}}"
+                voice.audioProfile.G711Mu.jitterBufferShrink="{{config.voice.audioProfile.G711Mu.jitterBufferShrink}}"
+                voice.audioProfile.G711Mu.jitterBufferMax="{{config.voice.audioProfile.G711Mu.jitterBufferMax}}"
+            />
+        </codecs>
+    </voice>
+</polycomConfig>

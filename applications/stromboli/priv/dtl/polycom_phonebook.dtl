@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<directory>
+	<item_list>
+        {% for record in config.phone_book %}
+        <item>
+			<ln>{{record.first_name}}</ln>
+			<fn>{{record.second_name}}</fn>
+			<ct>{{record.phone_number}}</ct>
+			<sd>{{ forloop.counter }}</sd>
+			<rt>{{ forloop.counter }}</rt>
+			<dc/>
+			<ad>0</ad>
+			<ar>0</ar>
+			<bw>0</bw>
+			<bb>0</bb>
+        </item>
+        {% endfor %}
+	</item_list>
+</directory>

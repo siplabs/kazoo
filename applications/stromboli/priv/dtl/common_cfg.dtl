@@ -1,0 +1,2 @@
+#!version:1.0.0.1
+auto_provision.server.url = {{settings.auto_provision.server.url}}

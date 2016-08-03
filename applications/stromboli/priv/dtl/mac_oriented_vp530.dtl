@@ -1,0 +1,9 @@
+#!version:1.0.0.1
+
+{% for device in devices %}
+account.{{ forloop.counter }}.enable = {% if device.enabled == "true" %} 1 {% else %} 0 {% endif %}
+account.{{ forloop.counter }}.auth_name = {{device.sip.username}}
+account.{{ forloop.counter }}.user_name = {{device.sip.username}}
+account.{{ forloop.counter }}.password = {{device.sip.password}}
+account.{{ forloop.counter }}.sip_server_host = {{ account.realm }}
+{% endfor %}

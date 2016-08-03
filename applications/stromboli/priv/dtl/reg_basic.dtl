@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Generated reg-basic.cfg Configuration File -->
+<polycomConfig xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="polycomConfig.xsd">
+  <call call.callsPerLineKey="24" call.callsPerLineKey.VVX101="8" call.callsPerLineKey.VVX201="8">
+  </call>
+  <reg {% for line in lines %} reg.{{ line.line_number }}.address="{{line.device.sip.username}}" reg.{{ line.line_number  }}.auth.password="{{line.device.sip.password}}" reg.{{ line.line_number  }}.auth.userId="{{line.device.sip.username}}"  reg.{{ line.line_number  }}.label="{{line.label}}" reg.{{ line.line_number  }}.displayName="{{line.display_name}}" reg.{{ line.line_number  }}.outboundProxy.address="" {% endfor %}>
+  </reg>
+</polycomConfig>
