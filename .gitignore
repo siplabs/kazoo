@@ -53,3 +53,5 @@ utils/sup/deps/getopt/
 .project
 .settings
 sup.bash
+/.idea
+kazoo.iml
