@@ -1,0 +1,13 @@
+{application, stromboli,
+ [
+  {description, "Stromboli - An autoprovisioner application"},
+  {vsn, "0.0.1"},
+  {modules, []},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { stromboli_app, []}},
+  {env, []}
+ ]}.
