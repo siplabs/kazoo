@@ -14,4 +14,5 @@
                   ,options      :: wh_json:object()
                  }).
 -type backend() :: #backend{}.
+-type work_result() :: 'ok' | {'error', Info :: any()} | {'exit', Reason ::any()}.
 -endif.

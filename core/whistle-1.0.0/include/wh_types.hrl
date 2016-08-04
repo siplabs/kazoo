@@ -182,6 +182,11 @@
                            {'stop', any(), any()} |
                            {'stop', any(), any(), any()}.
 
+-type init_ret(State) :: {'ok', State} |
+                         {'ok', State, timeout()} |
+                         {'stop', any()} |
+                         'ignore'.
+
 -type handle_call_ret_state(State) :: {'reply', any(), State} |
                                       {'reply', any(), State, gen_server_timeout()} |
                                       {'noreply', State} |
