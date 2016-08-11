@@ -49,10 +49,7 @@
             "minLength": 1,
             "name": "Lines",
             "required": true,
-            "type": [
-                "object",
-                "array"
-            ]
+            "type": ["object"]
         },
         "mac_address": {
             "description": "A unit's MAC address",

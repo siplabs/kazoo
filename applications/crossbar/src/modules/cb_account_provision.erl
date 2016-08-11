@@ -10,18 +10,26 @@
 -author("Ivan Romanyuk").
 
 -export([init/0
-        ,allowed_methods/0, allowed_methods/1
-        ,resource_exists/0, resource_exists/1
-        ,validate/1, validate/2
-        ,put/1
-        ,post/2
-        ,delete/2
+         ,allowed_methods/0, allowed_methods/1
+         ,resource_exists/0, resource_exists/1
+         ,validate/1, validate/2
+         ,put/1
+         ,post/2
+         ,delete/2
         ]).
+
+-ifdef(TEST).
+-export([does_config_exists/1]).
+-endif.
 
 -include("../crossbar.hrl").
 
 -define(LISTING_PROVISION_CONFIG, <<"stromboli/account_provision_listing">>).
 -define(HIERARCHICAL, <<"_hierarchical">>).
+-define(PROVISION_CONFIG_DOC_ID, <<"stromboli_account_provision_config">>).
+-define(CONFIG_KEY, "config").
+-define(LOCKS_KEY, "locks").
+-define(SCHEMA,<<"devicemanager_accounts">>).
 
 
 %%%===================================================================
@@ -75,11 +83,7 @@ resource_exists(_) -> true.
 %%--------------------------------------------------------------------
 %% @public
 %% @doc
-%% Check the request (request body, query string params, path tokens, etc)
-%% and load necessary information.
-%% /skels mights load a list of skel objects
-%% /skels/123 might load the skel object 123
-%% Generally, use crossbar_doc to manipulate the cb_context{} record
+%%
 %% @end
 %%--------------------------------------------------------------------
 -spec validate(cb_context:context()) -> cb_context:context().
@@ -113,18 +117,14 @@ validate_account_provision(Context, Id, ?HTTP_DELETE) ->
 %%--------------------------------------------------------------------
 -spec get_hierarchical_config(cb_context:context()) -> cb_context:context().
 get_hierarchical_config(Context) ->
-    Id = cb_context:account_id(Context),
-    case couch_mgr:open_doc(?WH_ACCOUNTS_DB, Id) of
-        {'ok', JObj} ->
-            [_UnexistingRoot | Tree] = kz_account:tree(JObj),
-            Ids = Tree ++ [Id],
-            {Config, Locks} = do_get_hierarchical_config(Ids),
-            Result1 = wh_json:set_value(<<"config">>, Config, wh_json:new()),
-            Result2 = wh_json:set_value(<<"locks">>, Locks, Result1),
-            crossbar_doc:handle_couch_mgr_success(Result2, Context);
-        {'error', Error} ->
-            crossbar_doc:handle_couch_mgr_errors(Error, Id, Context)
-    end.
+    JObj =  cb_context:account_doc(Context),
+    [_UnexistingRoot | Tree] = kz_account:tree(JObj),
+    Ids = Tree ++ [cb_context:account_id(Context)],
+    Configs = lists:foldr(fun do_get_hierarchical_config/2, [], Ids),
+    {Config, Locks} = mc_json:merge_recursive(Configs),
+    Result1 = wh_json:set_value(?CONFIG_KEY, Config, wh_json:new()),
+    Result2 = wh_json:set_value(?LOCKS_KEY, Locks, Result1),
+    crossbar_doc:handle_couch_mgr_success(Result2, Context).
 
 %%--------------------------------------------------------------------
 %% @public
@@ -132,19 +132,17 @@ get_hierarchical_config(Context) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec do_get_hierarchical_config(ne_binaries()) -> cb_context:context().
-do_get_hierarchical_config(Tree) ->
-    Configs1 = lists:foldr(fun(Id, Configs) ->
-                                case get_account_config(wh_util:format_account_db(Id)) of
-                                    {'ok', 'undefined'} -> Configs;
-                                    {'ok', JObj} ->
-                                        Config = wh_json:get_value(<<"config">>, JObj),
-                                        Locks = wh_json:get_value(<<"locks">>, JObj),
-                                        [{Config, Locks} | Configs]
-                                end
-                           end, [], Tree),
-    lager:debug([{trace, true}], "Configs:  ~p", [Configs1]),
-    mc_json:merge_recursive(Configs1).
+-spec do_get_hierarchical_config(ne_binary()
+                                 ,{wh_json:object(), wh_json:object()}) ->
+                                  {wh_json:object(), wh_json:object()}.
+do_get_hierarchical_config(Id, Configs) ->
+    case get_account_config(wh_util:format_account_db(Id)) of
+        {'ok', 'undefined'} -> Configs;
+        {'ok', JObj} ->
+            Config = wh_json:get_value(?CONFIG_KEY, JObj),
+            Locks = wh_json:get_value(?LOCKS_KEY, JObj),
+            [{Config, Locks} | Configs]
+    end.
 
 %%%--------------------------------------------------------------------
 %% @public
@@ -185,14 +183,13 @@ delete(Context, _) ->
 %%--------------------------------------------------------------------
 -spec maybe_create(cb_context:context()) -> cb_context:context().
 maybe_create(Context) ->
-    AccDb = cb_context:account_db(Context),
-case get_account_config(AccDb) of
-    {'ok', 'undefined'} -> create(Context);
-    {'ok', Id} ->
-        lager:debug([{trace, true}], "Config document already exists:  ~p", [Id]),
-        crossbar_util:response('error', <<"Config document already exists">>, Context);
-    {'error', Msg} ->
-        crossbar_util:response('error', Msg, Context)
+    case does_config_exists(Context) of
+        'false' -> create(Context);
+        'true' ->
+            lager:error("Account provision config document already exists", []),
+            crossbar_util:response('error'
+                                   ,<<"Account provision config document already exists">>
+                                   ,Context)
     end.
 
 %%--------------------------------------------------------------------
@@ -203,9 +200,8 @@ case get_account_config(AccDb) of
 %%--------------------------------------------------------------------
 -spec create(cb_context:context()) -> cb_context:context().
 create(Context) ->
-  lager:debug([{trace, true}], "create ~p", [Context]),
   OnSuccess = fun(C) -> on_successful_validation('undefined', C) end,
-  cb_context:validate_request_data(<<"devicemanager_accounts">>, Context, OnSuccess).
+  cb_context:validate_request_data(?SCHEMA, Context, OnSuccess).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -215,13 +211,7 @@ create(Context) ->
 %%--------------------------------------------------------------------
 -spec read(ne_binary(), cb_context:context()) -> cb_context:context().
 read(Id, Context) ->
-    AccDb = cb_context:account_db(Context),
-    case couch_mgr:open_doc(AccDb, Id) of
-        {'ok', JObj} ->
-            crossbar_doc:handle_couch_mgr_success(JObj, Context);
-        {'error', Error} ->
-            crossbar_doc:handle_couch_mgr_errors(Error, Id, Context)
-    end.
+    crossbar_doc:load(Id, Context).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -233,7 +223,7 @@ read(Id, Context) ->
 -spec update(ne_binary(), cb_context:context()) -> cb_context:context().
 update(Id, Context) ->
   OnSuccess = fun(C) -> on_successful_validation(Id, C) end,
-  cb_context:validate_request_data(<<"devicemanager_accounts">>, Context, OnSuccess).
+  cb_context:validate_request_data(?SCHEMA, Context, OnSuccess).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -244,7 +234,8 @@ update(Id, Context) ->
 %%--------------------------------------------------------------------
 -spec summary(cb_context:context()) -> cb_context:context().
 summary(Context) ->
-    crossbar_doc:load_view(?LISTING_PROVISION_CONFIG, [], Context, fun normalize_view_results/2).
+    crossbar_doc:load_view(?LISTING_PROVISION_CONFIG, [], Context
+                           ,fun normalize_view_results/2).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -252,9 +243,11 @@ summary(Context) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec on_successful_validation(api_binary(), cb_context:context()) -> cb_context:context().
+-spec on_successful_validation(api_binary(), cb_context:context()) ->
+                                    cb_context:context().
 on_successful_validation('undefined', Context) ->
-  cb_context:set_doc(Context, wh_doc:set_type(cb_context:doc(Context), <<"provision_config">>));
+  cb_context:set_doc(Context, wh_doc:set_type(cb_context:doc(Context)
+                                              ,<<"provision_config">>));
 on_successful_validation(Id, Context) ->
   crossbar_doc:load_merge(Id, Context).
 
@@ -279,7 +272,6 @@ normalize_view_results(JObj, Acc) ->
                             | {'error', 'too_many_config_docs'}
                             | couch_mgr:couchbeam_error().
 get_account_config(AccDb) ->
-    lager:debug([{trace, true}], "!!!!!!!!!!!!! AccDb ~p ", [AccDb]),
     case couch_mgr:get_results(AccDb, ?LISTING_PROVISION_CONFIG) of
         {'ok', [JObj]} ->
             Id = wh_json:get_value(<<"value">>, JObj),
@@ -292,4 +284,16 @@ get_account_config(AccDb) ->
         {'ok', []} ->
             {'ok', 'undefined'};
         {'error', _} = E -> E
+    end.
+
+-spec does_config_exists(cb_context:context()) -> boolean().
+does_config_exists(Context)->
+    Context1 = crossbar_doc:load(?PROVISION_CONFIG_DOC_ID, Context),
+    io:format("!!!! ----   Context ~65536p~n", [Context1]),
+    case {cb_context:resp_status(Context1)
+          ,cb_context:resp_error_msg(Context1)
+         }
+    of
+        {'success', _Code} -> 'true';
+        {'error', <<"404">>} -> 'false'
     end.
