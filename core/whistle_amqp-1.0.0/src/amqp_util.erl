@@ -69,6 +69,13 @@
 -export([unbind_q_from_callmgr/2]).
 -export([callmgr_publish/3, callmgr_publish/4]).
 
+-export([edr_exchange/0]).
+-export([new_edr_queue/2]).
+-export([delete_edr_queue/1]).
+-export([bind_q_to_edr/2]).
+-export([unbind_q_from_edr/2]).
+-export([edr_publish/2, edr_publish/3, edr_publish/4]).
+
 -export([resource_exchange/0]).
 -export([new_resource_queue/0, new_resource_queue/1]).
 -export([delete_resource_queue/1]).
@@ -221,6 +228,16 @@ callmgr_publish(Payload, ContentType, RoutingKey) ->
     basic_publish(?EXCHANGE_CALLMGR, RoutingKey, Payload, ContentType).
 callmgr_publish(Payload, ContentType, RoutingKey, Opts) ->
     basic_publish(?EXCHANGE_CALLMGR, RoutingKey, Payload, ContentType, Opts).
+
+-spec edr_publish(ne_binary(), amqp_payload()) -> 'ok'.
+-spec edr_publish(ne_binary(), amqp_payload(), ne_binary()) -> 'ok'.
+-spec edr_publish(ne_binary(), amqp_payload(), ne_binary(), wh_proplist()) -> 'ok'.
+edr_publish(Queue, Payload) ->
+    edr_publish(Queue, Payload, ?DEFAULT_CONTENT_TYPE).
+edr_publish(Queue, Payload, ContentType) ->
+    edr_publish(Queue, Payload, ContentType, []).
+edr_publish(Queue, Payload, ContentType, Opts) ->
+    basic_publish(?EXCHANGE_EDR, Queue, Payload, ContentType, Opts).
 
 -spec configuration_publish(ne_binary(), amqp_payload()) -> 'ok'.
 -spec configuration_publish(ne_binary(), amqp_payload(), ne_binary()) -> 'ok'.
@@ -484,6 +501,10 @@ resource_exchange() ->
 callmgr_exchange() ->
     new_exchange(?EXCHANGE_CALLMGR, ?TYPE_CALLMGR).
 
+-spec edr_exchange() -> 'ok'.
+edr_exchange() ->
+    new_exchange(?EXCHANGE_EDR, ?TYPE_EDR).
+
 -spec configuration_exchange() -> 'ok'.
 configuration_exchange() ->
     new_exchange(?EXCHANGE_CONFIGURATION, ?TYPE_CONFIGURATION).
@@ -615,6 +636,9 @@ new_resource_queue(Queue) ->
 new_callmgr_queue(Queue) -> new_callmgr_queue(Queue, []).
 new_callmgr_queue(Queue, Opts) -> new_queue(Queue, Opts).
 
+-spec new_edr_queue(binary(), wh_proplist()) -> ne_binary() | {'error', any()}.
+new_edr_queue(Queue, Opts) -> new_queue(Queue, Opts).
+
 -spec new_configuration_queue(ne_binary()) -> ne_binary() | {'error', any()}.
 -spec new_configuration_queue(ne_binary(), wh_proplist()) -> ne_binary() | {'error', any()}.
 new_configuration_queue(Queue) -> new_configuration_queue(Queue, []).
@@ -742,6 +766,7 @@ delete_sysconf_queue(Queue) -> queue_delete(Queue, []).
 delete_callmgr_queue(Queue) -> queue_delete(Queue, []).
 delete_resource_queue(Queue) -> queue_delete(Queue, []).
 delete_configuration_queue(Queue) -> queue_delete(Queue, []).
+delete_edr_queue(Queue) -> queue_delete(Queue, []).
 delete_conference_queue(Queue) -> queue_delete(Queue, []).
 delete_monitor_queue(Queue) -> queue_delete(Queue, []).
 delete_registrar_queue(Queue) -> queue_delete(Queue, []).
@@ -846,6 +871,10 @@ bind_q_to_callmgr(Queue, Routing) ->
 bind_q_to_configuration(Queue, Routing) ->
     bind_q_to_exchange(Queue, Routing, ?EXCHANGE_CONFIGURATION).
 
+-spec bind_q_to_edr(ne_binary(), ne_binary()) -> 'ok'.
+bind_q_to_edr(Queue, Routing) ->
+    bind_q_to_exchange(Queue, Routing, ?EXCHANGE_EDR).
+
 -spec bind_q_to_monitor(ne_binary(), ne_binary()) -> 'ok'.
 bind_q_to_monitor(Queue, Routing) ->
     bind_q_to_exchange(Queue, Routing, ?EXCHANGE_MONITOR).
@@ -939,6 +968,9 @@ unbind_q_from_callmgr(Queue, Routing) ->
 
 unbind_q_from_configuration(Queue, Routing) ->
     unbind_q_from_exchange(Queue, Routing, ?EXCHANGE_CONFIGURATION).
+
+unbind_q_from_edr(Queue, Routing) ->
+    unbind_q_from_exchange(Queue, Routing, ?EXCHANGE_EDR).
 
 unbind_q_from_targeted(Queue) ->
     unbind_q_from_exchange(Queue, Queue, ?EXCHANGE_TARGETED).

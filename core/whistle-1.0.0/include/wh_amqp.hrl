@@ -48,6 +48,10 @@
 -define(EXCHANGE_TARGETED, <<"targeted">>).
 -define(TYPE_TARGETED, <<"direct">>).
 
+%% EDR Exchange
+-define(EXCHANGE_EDR, <<"edr">>).
+-define(TYPE_EDR, <<"direct">>).
+
 %% Call Control Exchange
 %% - Specific type of exchange for call control. When a call is spun up, a process is created
 %%   to have a queue on this exchange and listen for commands to come to it.
