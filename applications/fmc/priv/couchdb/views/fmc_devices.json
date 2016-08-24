@@ -1,0 +1,24 @@
+{
+    "_id": "_design/fmc_devices",
+    "language": "javascript",
+    "views": {
+        "crossbar_listing": {
+            "map": "function(doc) { if (doc.pvt_type != 'fmc_device' || doc.pvt_deleted) return; emit(doc._id, {'id': doc._id, 'account_id':doc.account_id, 'x_fmc_value':doc.x_fmc_value, 'device_id':doc.device_id, 'a_number':doc.a_number}); }"
+        },
+        "full_crossbar_listing": {
+            "map": "function(doc) { if (doc.pvt_type != 'fmc_device' || doc.pvt_deleted) return; emit(doc._id, {'_id': doc._id, '_rev': doc._rev, 'account_id':doc.account_id, 'x_fmc_value':doc.x_fmc_value, 'device_id':doc.device_id, 'a_number':doc.a_number}); }"
+        },
+        "list_by_account_id": {
+            "map": "function(doc) { if (doc.pvt_type != 'fmc_device' || doc.pvt_deleted) return; emit(doc.account_id, {'id': doc._id, 'account_id':doc.account_id, 'x_fmc_value':doc.x_fmc_value, 'device_id':doc.device_id, 'a_number':doc.a_number}); }"
+        },
+        "list_by_device_id": {
+            "map": "function(doc) { if (doc.pvt_type != 'fmc_device' || doc.pvt_deleted) return; emit(doc.device_id, {'id': doc._id, 'account_id':doc.account_id, 'x_fmc_value':doc.x_fmc_value, 'device_id':doc.device_id, 'a_number':doc.a_number}); }"
+        },
+        "list_by_number": {
+            "map": "function(doc) { if (doc.pvt_type != 'fmc_device' || doc.pvt_deleted) return; emit(doc.a_number, doc.account_id); }"
+        },
+        "list_by_fmc_and_number": {
+            "map": "function(doc) { if (doc.pvt_type != 'fmc_device' || doc.pvt_deleted) return; emit([doc.x_fmc_value, doc.a_number], {'id': doc._id, 'account_id':doc.account_id, 'x_fmc_value':doc.x_fmc_value, 'device_id':doc.device_id, 'a_number':doc.a_number}); }"
+        }
+    }
+}
